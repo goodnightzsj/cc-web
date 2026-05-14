@@ -1319,6 +1319,45 @@ body.session-loading-active {
   to { transform: rotate(360deg); }
 }
 
+/* System message kind variants (init banner / compact summary / error) */
+.msg.system[data-kind] .msg-bubble {
+  white-space: pre-wrap;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  padding: 8px 12px;
+}
+.msg.system[data-kind="init"] .msg-bubble {
+  border-left: 3px solid var(--accent, #5d8a54);
+  background: color-mix(in srgb, var(--accent, #5d8a54) 7%, transparent);
+  color: color-mix(in srgb, var(--accent, #5d8a54) 75%, var(--text-primary, #1f2937));
+}
+.msg.system[data-kind="init"] .msg-bubble::before {
+  content: '✦ session ready';
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.55;
+  margin-bottom: 4px;
+}
+.msg.system[data-kind="compact"] .msg-bubble,
+.msg.system[data-kind="compact-summary"] .msg-bubble {
+  border-left: 3px solid #f5a623;
+  background: color-mix(in srgb, #f5a623 8%, transparent);
+  color: color-mix(in srgb, #f5a623 75%, var(--text-primary, #1f2937));
+}
+.msg.system[data-kind="compact-summary"] .msg-bubble {
+  font-family: inherit;
+  font-style: italic;
+  opacity: 0.9;
+}
+.msg.system[data-kind="error"] .msg-bubble {
+  border-left: 3px solid #c0392b;
+  background: color-mix(in srgb, #c0392b 8%, transparent);
+  color: color-mix(in srgb, #c0392b 80%, var(--text-primary, #1f2937));
+}
+
 /* stderr stream block (CLI subprocess stderr forwarded over WS) */
 .msg-stderr {
   margin: 10px 16px;

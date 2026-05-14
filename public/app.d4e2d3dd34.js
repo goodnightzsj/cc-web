@@ -1638,7 +1638,7 @@
         break;
 
       case 'system_message':
-        appendSystemMessage(msg.message);
+        appendSystemMessage(msg.message, msg.kind || null);
         break;
 
       case 'mode_changed':
@@ -2707,10 +2707,12 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   }
 
-  function appendSystemMessage(message) {
+  function appendSystemMessage(message, kind) {
     const welcome = messagesDiv.querySelector('.welcome-msg');
     if (welcome) welcome.remove();
-    messagesDiv.appendChild(createMsgElement('system', message));
+    const el = createMsgElement('system', message);
+    if (kind) el.dataset.kind = kind;
+    messagesDiv.appendChild(el);
     scrollToBottom();
   }
 
