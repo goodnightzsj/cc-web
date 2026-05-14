@@ -1288,20 +1288,21 @@
     beginSessionSwitch(sessionId, { blocking: options.blocking !== false, force: options.force === true, label: options.label });
   }
 
+  function formatStats(totalUsage, totalCost) {
+    const parts = [];
+    const u = totalUsage;
+    if (u && ((u.inputTokens || 0) > 0 || (u.outputTokens || 0) > 0)) {
+      const cacheText = u.cachedInputTokens ? ` · cache ${u.cachedInputTokens}` : '';
+      parts.push(`in ${u.inputTokens || 0} · out ${u.outputTokens || 0}${cacheText}`);
+    }
+    if (typeof totalCost === 'number' && totalCost > 0) {
+      parts.push(`$${totalCost.toFixed(4)}`);
+    }
+    return parts.join(' · ');
+  }
+
   function setStatsDisplay(msg) {
-    if (currentAgent === 'codex' && msg && msg.totalUsage) {
-      const usage = msg.totalUsage;
-      if ((usage.inputTokens || 0) > 0 || (usage.outputTokens || 0) > 0) {
-        const cacheText = usage.cachedInputTokens ? ` · cache ${usage.cachedInputTokens}` : '';
-        costDisplay.textContent = `in ${usage.inputTokens} · out ${usage.outputTokens}${cacheText}`;
-        return;
-      }
-    }
-    if (msg && typeof msg.totalCost === 'number' && msg.totalCost > 0) {
-      costDisplay.textContent = `$${msg.totalCost.toFixed(4)}`;
-      return;
-    }
-    costDisplay.textContent = '';
+    costDisplay.textContent = formatStats(msg?.totalUsage, msg?.totalCost) || '';
   }
 
 	  function _splitCodexThinkingModel(model) {
@@ -1616,22 +1617,25 @@
         });
         break;
 
-      case 'cost':
-        costDisplay.textContent = `$${msg.costUsd.toFixed(4)}`;
+      case 'cost': {
         if (currentSessionId) {
           updateCachedSession(currentSessionId, (snapshot) => { snapshot.totalCost = msg.costUsd; });
         }
+        const snap = currentSessionId ? sessionCache.get(currentSessionId)?.snapshot : null;
+        costDisplay.textContent = formatStats(snap?.totalUsage, msg.costUsd) || `$${(msg.costUsd || 0).toFixed(4)}`;
         break;
+      }
 
-      case 'usage':
+      case 'usage': {
         if (msg.totalUsage) {
-          const cacheText = msg.totalUsage.cachedInputTokens ? ` · cache ${msg.totalUsage.cachedInputTokens}` : '';
-          costDisplay.textContent = `in ${msg.totalUsage.inputTokens} · out ${msg.totalUsage.outputTokens}${cacheText}`;
           if (currentSessionId) {
             updateCachedSession(currentSessionId, (snapshot) => { snapshot.totalUsage = deepClone(msg.totalUsage); });
           }
+          const snap = currentSessionId ? sessionCache.get(currentSessionId)?.snapshot : null;
+          costDisplay.textContent = formatStats(msg.totalUsage, snap?.totalCost) || '';
         }
         break;
+      }
 
       case 'done':
         finishGenerating(msg.sessionId);
