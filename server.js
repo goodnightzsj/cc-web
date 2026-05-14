@@ -1902,9 +1902,21 @@ const server = http.createServer((req, res) => {
       return res.end('Not Found');
     }
     const ext = path.extname(filePath);
+    const filename = path.basename(filePath);
+    // index.html 与 service worker 永远新鲜；含 hash 指纹的资源走 immutable 长缓存；
+    // 其余静态文件走短缓存兜底
+    const HASH_PATTERN = /\.[0-9a-f]{10}\./;
+    let cacheControl;
+    if (filename === 'index.html' || filename === 'sw.js') {
+      cacheControl = 'no-cache, must-revalidate';
+    } else if (HASH_PATTERN.test(filename)) {
+      cacheControl = 'public, max-age=31536000, immutable';
+    } else {
+      cacheControl = 'public, max-age=300';
+    }
     res.writeHead(200, {
       'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': cacheControl,
     });
     res.end(data);
   });
@@ -3438,17 +3450,19 @@ function parseJsonlToMessages(lines) {
       const blocks = entry.message?.content;
       if (!Array.isArray(blocks)) continue;
       let content = '';
+      let thinking = '';
       const toolCalls = [];
       for (const b of blocks) {
         if (b.type === 'text' && b.text) {
           content += b.text;
+        } else if (b.type === 'thinking' && (b.thinking || b.text)) {
+          thinking += b.thinking || b.text || '';
         } else if (b.type === 'tool_use') {
           toolCalls.push({ name: b.name, id: b.id, input: b.input, done: true });
         }
-        // skip thinking blocks
       }
-      if (content.trim() || toolCalls.length > 0) {
-        messages.push({ role: 'assistant', content, toolCalls, timestamp: entry.timestamp || null });
+      if (content.trim() || thinking.trim() || toolCalls.length > 0) {
+        messages.push({ role: 'assistant', content, thinking: thinking || undefined, toolCalls, timestamp: entry.timestamp || null });
       }
     }
     // skip other types
