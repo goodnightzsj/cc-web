@@ -1319,6 +1319,43 @@ body.session-loading-active {
   to { transform: rotate(360deg); }
 }
 
+/* Tool result decorations: truncation note, inline images, error state */
+.tool-result-truncated {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font-size: 11.5px;
+  color: var(--text-secondary, #6b7280);
+  background: color-mix(in srgb, #d4a33a 12%, transparent);
+  border-left: 2px solid #d4a33a;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.tool-result-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.tool-result-image {
+  max-width: 280px;
+  max-height: 220px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, rgba(0,0,0,0.08));
+  cursor: zoom-in;
+  object-fit: contain;
+  background: color-mix(in srgb, var(--text-secondary, #6b7280) 4%, transparent);
+}
+/* Error state: failed tool result (Claude is_error=true or Codex exit_code≠0) */
+.tool-call[data-tool-error="1"] > summary { color: #c0392b; }
+.tool-call[data-tool-error="1"] > summary .tool-call-label::before {
+  content: '! ';
+  color: #c0392b;
+  font-weight: 700;
+}
+.tool-call[data-tool-error="1"] {
+  border-color: rgba(192, 57, 43, 0.35);
+}
+
 /* Tool calls */
 .tool-call {
   margin: 8px 0;

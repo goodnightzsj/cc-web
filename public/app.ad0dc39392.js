@@ -1594,12 +1594,22 @@
 
       case 'tool_end':
         if (activeToolCalls.has(msg.toolUseId)) {
-          activeToolCalls.get(msg.toolUseId).done = true;
-          if (msg.kind) activeToolCalls.get(msg.toolUseId).kind = msg.kind;
-          if (msg.meta) activeToolCalls.get(msg.toolUseId).meta = msg.meta;
-          activeToolCalls.get(msg.toolUseId).result = msg.result;
+          const tc = activeToolCalls.get(msg.toolUseId);
+          tc.done = true;
+          if (msg.kind) tc.kind = msg.kind;
+          if (msg.meta) tc.meta = msg.meta;
+          tc.result = msg.result;
+          tc.resultTruncated = !!msg.resultTruncated;
+          tc.resultTotalLength = msg.resultTotalLength;
+          tc.isError = !!msg.isError;
+          if (Array.isArray(msg.images) && msg.images.length) tc.images = msg.images;
         }
-        updateToolCall(msg.toolUseId, msg.result);
+        updateToolCall(msg.toolUseId, msg.result, {
+          truncated: !!msg.resultTruncated,
+          totalLength: msg.resultTotalLength,
+          isError: !!msg.isError,
+          images: Array.isArray(msg.images) ? msg.images : null,
+        });
         break;
 
       case 'cost':
@@ -2360,12 +2370,52 @@
     return wrapper;
   }
 
+  function formatByteSize(n) {
+    if (n == null || !Number.isFinite(n)) return '';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  }
+
+  function appendToolDecorations(contentEl, tool) {
+    if (!contentEl || !tool) return contentEl;
+    // Inline images returned by tools (Claude tool_result content type:image)
+    if (Array.isArray(tool.images) && tool.images.length) {
+      const gallery = document.createElement('div');
+      gallery.className = 'tool-result-images';
+      for (const im of tool.images) {
+        const src = im?.source;
+        if (!src) continue;
+        const url = src.type === 'base64' && src.data
+          ? `data:${src.media_type || 'image/png'};base64,${src.data}`
+          : (typeof src === 'string' ? src : null);
+        if (!url) continue;
+        const img = document.createElement('img');
+        img.className = 'tool-result-image';
+        img.loading = 'lazy';
+        img.src = url;
+        gallery.appendChild(img);
+      }
+      if (gallery.children.length) contentEl.appendChild(gallery);
+    }
+    if (tool.resultTruncated) {
+      const note = document.createElement('div');
+      note.className = 'tool-result-truncated';
+      const shown = formatByteSize((tool.result || '').length);
+      const total = formatByteSize(tool.resultTotalLength || 0);
+      note.textContent = `已显示 ${shown} / 共 ${total} · 余下内容超出 64 KB 上限`;
+      contentEl.appendChild(note);
+    }
+    return contentEl;
+  }
+
   function buildToolContentElement(name, input) {
     const tool = typeof name === 'object' && name !== null ? name : { name, input };
     const effectiveName = tool.name || name;
     const effectiveInput = tool.input !== undefined ? tool.input : input;
     const effectiveResult = tool.result;
     const kind = toolKind(tool);
+    const decorate = (el) => appendToolDecorations(el, tool);
     if (effectiveName === 'AskUserQuestion') {
       const questions = extractAskUserQuestions(effectiveInput);
       if (questions.length > 0) {
@@ -2394,7 +2444,7 @@
         stack.appendChild(empty);
       }
       wrapper.appendChild(stack);
-      return wrapper;
+      return decorate(wrapper);
     }
 
     if (kind === 'reasoning') {
@@ -2402,7 +2452,7 @@
       content.className = 'tool-call-content reasoning';
       const text = stringifyToolValue(effectiveResult || effectiveInput);
       content.innerHTML = text ? renderMarkdown(text) : '<div class="tool-call-empty">暂无推理内容</div>';
-      return content;
+      return decorate(content);
     }
 
     if (kind === 'file_change' || kind === 'mcp_tool_call') {
@@ -2418,14 +2468,14 @@
         stack.appendChild(buildStructuredToolSection('Payload', payloadText));
       }
       wrapper.appendChild(stack);
-      return wrapper;
+      return decorate(wrapper);
     }
 
     const inputStr = stringifyToolValue(effectiveResult || effectiveInput);
     const content = document.createElement('div');
     content.className = 'tool-call-content';
     content.textContent = inputStr;
-    return content;
+    return decorate(content);
   }
 
   function createToolCallElement(toolUseId, tool, done) {
@@ -2502,7 +2552,7 @@
     if (summary) summary.textContent = `展开 ${count} 个工具调用`;
   }
 
-  function updateToolCall(toolUseId, result) {
+  function updateToolCall(toolUseId, result, extras) {
     const el = document.getElementById(`tool-${toolUseId}`);
     if (!el) return;
     const tool = activeToolCalls.get(toolUseId) || {
@@ -2513,6 +2563,13 @@
     };
     tool.done = true;
     if (result !== undefined) tool.result = result;
+    if (extras) {
+      if (extras.truncated !== undefined) tool.resultTruncated = extras.truncated;
+      if (extras.totalLength !== undefined) tool.resultTotalLength = extras.totalLength;
+      if (extras.isError !== undefined) tool.isError = extras.isError;
+      if (extras.images) tool.images = extras.images;
+    }
+    if (tool.isError) el.dataset.toolError = '1'; else delete el.dataset.toolError;
     const summary = el.querySelector('summary');
     if (summary) applyToolSummary(summary, tool, true);
     if (tool.name === 'AskUserQuestion') return;
