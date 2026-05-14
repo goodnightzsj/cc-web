@@ -3341,10 +3341,55 @@ function safeJsonParse(input) {
   }
 }
 
+// 单字段长字符串上限：超过则保留 head+tail 摘要（diff 视图可读）
+const TOOL_INPUT_FIELD_CAP = 8 * 1024;
+
+function capField(value, cap = TOOL_INPUT_FIELD_CAP) {
+  if (typeof value !== 'string') return value;
+  if (value.length <= cap) return value;
+  const half = Math.floor((cap - 80) / 2);
+  return value.slice(0, half) + `\n\n…[truncated ${value.length - cap} chars]…\n\n` + value.slice(-half);
+}
+
 function sanitizeToolInput(toolName, input) {
   const parsed = safeJsonParse(input);
-  if (toolName === 'AskUserQuestion') {
-    return parsed;
+  if (toolName === 'AskUserQuestion') return parsed;
+  // Edit/Write/MultiEdit/NotebookEdit: 保留完整结构化字段，仅按单字段封顶
+  if (parsed && typeof parsed === 'object') {
+    if (toolName === 'Edit') {
+      return {
+        file_path: parsed.file_path,
+        old_string: capField(parsed.old_string),
+        new_string: capField(parsed.new_string),
+        replace_all: parsed.replace_all,
+      };
+    }
+    if (toolName === 'Write') {
+      return {
+        file_path: parsed.file_path,
+        content: capField(parsed.content),
+      };
+    }
+    if (toolName === 'MultiEdit') {
+      return {
+        file_path: parsed.file_path,
+        edits: Array.isArray(parsed.edits)
+          ? parsed.edits.map((e) => ({
+              old_string: capField(e?.old_string),
+              new_string: capField(e?.new_string),
+              replace_all: e?.replace_all,
+            }))
+          : parsed.edits,
+      };
+    }
+    if (toolName === 'NotebookEdit') {
+      return {
+        notebook_path: parsed.notebook_path,
+        cell_id: parsed.cell_id,
+        edit_mode: parsed.edit_mode,
+        new_source: capField(parsed.new_source),
+      };
+    }
   }
   return truncateObj(parsed, 500);
 }

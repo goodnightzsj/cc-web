@@ -1365,6 +1365,56 @@ body.session-loading-active {
   overflow-y: auto;
 }
 
+/* Edit/Write/MultiEdit diff renderer (file_change kind) */
+.tool-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+.tool-diff-block { display: flex; flex-direction: column; gap: 6px; }
+.tool-diff-label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #6b7280);
+  font-weight: 600;
+}
+.tool-diff-panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.tool-diff-panes:has(> .diff-pane:only-child) {
+  grid-template-columns: 1fr;
+}
+.diff-pane {
+  margin: 0;
+  padding: 8px 10px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  border-radius: 6px;
+  max-height: 360px;
+  overflow: auto;
+  border-left: 3px solid transparent;
+}
+.diff-pane.removed {
+  background: color-mix(in srgb, #dc3545 8%, transparent);
+  border-left-color: #dc3545;
+  color: color-mix(in srgb, #dc3545 80%, var(--text-primary, #1f2937));
+}
+.diff-pane.added {
+  background: color-mix(in srgb, #28a745 8%, transparent);
+  border-left-color: #28a745;
+  color: color-mix(in srgb, #28a745 80%, var(--text-primary, #1f2937));
+}
+@media (max-width: 720px) {
+  .tool-diff-panes { grid-template-columns: 1fr; }
+}
+
 /* Tool result decorations: truncation note, inline images, error state */
 .tool-result-truncated {
   margin-top: 8px;

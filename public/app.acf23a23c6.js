@@ -2374,6 +2374,83 @@
     return wrapper;
   }
 
+  // Extract { before, after, label } hunks from Edit/MultiEdit/Write/NotebookEdit input
+  // (Claude shape) or Codex file_change.changes shape.
+  function extractDiffHunks(toolName, input) {
+    if (!input || typeof input !== 'object') return null;
+    // Claude Write — single new file
+    if (toolName === 'Write' && typeof input.content === 'string') {
+      return [{ before: '', after: input.content, label: 'new file' }];
+    }
+    // Claude Edit — single old/new pair
+    if (toolName === 'Edit' && (typeof input.old_string === 'string' || typeof input.new_string === 'string')) {
+      return [{ before: input.old_string || '', after: input.new_string || '', label: input.replace_all ? 'replace all' : 'replace' }];
+    }
+    // Claude MultiEdit — array of edits
+    if (toolName === 'MultiEdit' && Array.isArray(input.edits)) {
+      return input.edits.map((e, i) => ({
+        before: e?.old_string || '',
+        after: e?.new_string || '',
+        label: `edit ${i + 1}${e?.replace_all ? ' · replace all' : ''}`,
+      }));
+    }
+    // Claude NotebookEdit
+    if (toolName === 'NotebookEdit' && typeof input.new_source === 'string') {
+      return [{ before: '', after: input.new_source, label: `${input.edit_mode || 'edit'} cell ${input.cell_id || ''}` }];
+    }
+    // Codex file_change.changes — { "<path>": { update: { old_string, new_string } } | "add" | "delete" }
+    if (input.changes && typeof input.changes === 'object') {
+      const out = [];
+      for (const [pth, change] of Object.entries(input.changes)) {
+        if (!change || typeof change !== 'object') continue;
+        if (change.update) {
+          out.push({ before: change.update.old_string || '', after: change.update.new_string || '', label: pth });
+        } else if (change.add) {
+          out.push({ before: '', after: change.add.content || change.add || '', label: `${pth} (added)` });
+        } else if (typeof change === 'string') {
+          out.push({ before: '', after: change, label: pth });
+        }
+      }
+      if (out.length) return out;
+    }
+    return null;
+  }
+
+  function renderDiffHunks(hunks) {
+    if (!Array.isArray(hunks) || !hunks.length) return null;
+    const root = document.createElement('div');
+    root.className = 'tool-diff';
+    for (const hunk of hunks) {
+      const block = document.createElement('div');
+      block.className = 'tool-diff-block';
+      if (hunk.label) {
+        const lbl = document.createElement('div');
+        lbl.className = 'tool-diff-label';
+        lbl.textContent = hunk.label;
+        block.appendChild(lbl);
+      }
+      const panes = document.createElement('div');
+      panes.className = 'tool-diff-panes';
+      const isNew = !hunk.before;
+      const isDelete = !hunk.after;
+      if (!isNew) {
+        const a = document.createElement('pre');
+        a.className = 'diff-pane removed';
+        a.textContent = hunk.before;
+        panes.appendChild(a);
+      }
+      if (!isDelete) {
+        const b = document.createElement('pre');
+        b.className = 'diff-pane added';
+        b.textContent = hunk.after;
+        panes.appendChild(b);
+      }
+      block.appendChild(panes);
+      root.appendChild(block);
+    }
+    return root;
+  }
+
   function formatByteSize(n) {
     if (n == null || !Number.isFinite(n)) return '';
     if (n < 1024) return `${n} B`;
@@ -2467,9 +2544,19 @@
       if (tool?.meta?.subtitle) {
         stack.appendChild(buildStructuredToolSection(kind === 'file_change' ? 'Target' : 'Tool', tool.meta.subtitle));
       }
-      const payloadText = stringifyToolValue(effectiveResult || effectiveInput);
-      if (payloadText) {
-        stack.appendChild(buildStructuredToolSection('Payload', payloadText));
+      // 文件类工具走 diff/added 渲染（Edit/MultiEdit/Write/NotebookEdit + Codex file_change.changes）
+      if (kind === 'file_change') {
+        const hunks = extractDiffHunks(effectiveName, effectiveInput);
+        if (hunks && hunks.length) {
+          const diffEl = renderDiffHunks(hunks);
+          if (diffEl) stack.appendChild(diffEl);
+        } else {
+          const payloadText = stringifyToolValue(effectiveResult || effectiveInput);
+          if (payloadText) stack.appendChild(buildStructuredToolSection('Payload', payloadText));
+        }
+      } else {
+        const payloadText = stringifyToolValue(effectiveResult || effectiveInput);
+        if (payloadText) stack.appendChild(buildStructuredToolSection('Payload', payloadText));
       }
       wrapper.appendChild(stack);
       return decorate(wrapper);
