@@ -3188,7 +3188,8 @@ function handleMessage(ws, msg, options = {}) {
   }
 
   const outputFd = fs.openSync(outputPath, 'w');
-  const errorFd = fs.openSync(errorPath, 'w');
+  // stderr: 用 pipe 实时转发到 ws，同时 tee 到 error.log（兼容退出后读 stderrSnippet 的逻辑）
+  const stderrFileStream = fs.createWriteStream(errorPath, { flags: 'w' });
 
   let proc;
   try {
@@ -3202,9 +3203,47 @@ function handleMessage(ws, msg, options = {}) {
     proc = spawn(spawnSpec.command, spawnSpec.args, {
       env: spawnSpec.env,
       cwd: spawnSpec.cwd,
-      stdio: [stdinSource, outputFd, errorFd],
+      stdio: [stdinSource, outputFd, 'pipe'],
       detached: !IS_WIN,
       windowsHide: true,
+    });
+    // Tee stderr → file + throttled ws stderr_chunk events
+    proc.stderr.pipe(stderrFileStream);
+    let pendingStderr = '';
+    let stderrFlushTimer = null;
+    const STDERR_FLUSH_MS = 200;
+    const STDERR_CHUNK_MAX = 8 * 1024;
+    const flushStderr = () => {
+      stderrFlushTimer = null;
+      if (!pendingStderr) return;
+      const chunk = pendingStderr.length <= STDERR_CHUNK_MAX
+        ? pendingStderr
+        : pendingStderr.slice(0, STDERR_CHUNK_MAX);
+      pendingStderr = pendingStderr.length > STDERR_CHUNK_MAX
+        ? pendingStderr.slice(STDERR_CHUNK_MAX)
+        : '';
+      // 优先使用当前活动 entry.ws（reconnect 后更新），fallback 到 spawn 时捕获的 ws
+      const currentWs = activeProcesses.get(currentSessionId)?.ws || ws;
+      wsSend(currentWs, { type: 'stderr_chunk', text: chunk }, true);
+      if (pendingStderr) stderrFlushTimer = setTimeout(flushStderr, STDERR_FLUSH_MS);
+    };
+    proc.stderr.on('data', (buf) => {
+      const s = buf.toString('utf8');
+      // 过滤噪声行：纯空白 / Reconnecting... / 单独 ANSI 控制
+      const cleaned = s.split('\n').filter((line) => {
+        const t = line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').trim();
+        if (!t) return false;
+        if (/^Reconnecting\.\.\./i.test(t)) return false;
+        return true;
+      }).join('\n');
+      if (!cleaned) return;
+      pendingStderr += cleaned;
+      if (!pendingStderr.endsWith('\n')) pendingStderr += '\n';
+      if (!stderrFlushTimer) stderrFlushTimer = setTimeout(flushStderr, STDERR_FLUSH_MS);
+    });
+    proc.on('close', () => {
+      if (stderrFlushTimer) { clearTimeout(stderrFlushTimer); stderrFlushTimer = null; }
+      flushStderr();
     });
     if (useStreamJson) {
       // Write the stream-json message then close stdin so Claude knows input is done
@@ -3215,7 +3254,7 @@ function handleMessage(ws, msg, options = {}) {
     }
   } catch (err) {
     fs.closeSync(outputFd);
-    fs.closeSync(errorFd);
+    stderrFileStream.end();
     cleanRunDir(currentSessionId);
     plog('ERROR', 'process_spawn_fail', { sessionId: currentSessionId.slice(0, 8), error: err.message });
     const agent = getSessionAgent(session);
@@ -3223,7 +3262,7 @@ function handleMessage(ws, msg, options = {}) {
   }
 
   fs.closeSync(outputFd);
-  fs.closeSync(errorFd);
+  // stderrFileStream 会在 proc.stderr 关闭时由 pipe 自动 end；这里不关闭
 
   fs.writeFileSync(path.join(dir, 'pid'), String(proc.pid));
   proc.unref(); // Process survives Node.js exit

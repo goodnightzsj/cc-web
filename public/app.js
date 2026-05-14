@@ -1586,6 +1586,10 @@
         scheduleRender();
         break;
 
+      case 'stderr_chunk':
+        appendStderrChunk(msg.text || '');
+        break;
+
       case 'tool_start':
         if (!isGenerating) startGenerating();
         activeToolCalls.set(msg.toolUseId, { name: msg.name, input: msg.input, kind: msg.kind || null, meta: msg.meta || null, done: false });
@@ -2621,6 +2625,29 @@
     if (welcome) welcome.remove();
     messagesDiv.appendChild(createMsgElement('system', message));
     scrollToBottom();
+  }
+
+  // Stream stderr chunks from the CLI subprocess into a single collapsible block.
+  // Multiple chunks within ~1s coalesce so high-frequency warnings don't spam.
+  let _stderrEl = null;
+  let _stderrIdleTimer = null;
+  function appendStderrChunk(text) {
+    if (!text) return;
+    const welcome = messagesDiv.querySelector('.welcome-msg');
+    if (welcome) welcome.remove();
+    if (!_stderrEl || !_stderrEl.isConnected) {
+      _stderrEl = document.createElement('details');
+      _stderrEl.className = 'msg-stderr';
+      _stderrEl.open = true;
+      _stderrEl.innerHTML = '<summary class="msg-stderr-summary"><span class="msg-stderr-icon">⚠</span><span>CLI stderr</span></summary><pre class="msg-stderr-body"></pre>';
+      messagesDiv.appendChild(_stderrEl);
+    }
+    const body = _stderrEl.querySelector('.msg-stderr-body');
+    if (body) body.textContent += text;
+    scrollToBottom();
+    if (_stderrIdleTimer) clearTimeout(_stderrIdleTimer);
+    // Detach pointer after 1s of silence so the next burst starts a fresh block
+    _stderrIdleTimer = setTimeout(() => { _stderrEl = null; _stderrIdleTimer = null; }, 1000);
   }
 
   function appendError(message) {

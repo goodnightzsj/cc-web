@@ -1319,6 +1319,52 @@ body.session-loading-active {
   to { transform: rotate(360deg); }
 }
 
+/* stderr stream block (CLI subprocess stderr forwarded over WS) */
+.msg-stderr {
+  margin: 10px 16px;
+  border-left: 3px solid #d4a33a;
+  background: color-mix(in srgb, #d4a33a 8%, transparent);
+  border-radius: 0 8px 8px 0;
+  max-width: min(820px, calc(100% - 32px));
+  overflow: hidden;
+}
+.msg-stderr-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  user-select: none;
+  color: #b18510;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  list-style: none;
+}
+.msg-stderr-summary::-webkit-details-marker { display: none; }
+.msg-stderr-summary::marker { content: ''; }
+.msg-stderr-summary::before {
+  content: '▾';
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 9px;
+  opacity: 0.6;
+}
+.msg-stderr:not([open]) > .msg-stderr-summary::before { transform: rotate(-90deg); }
+.msg-stderr-icon { font-size: 12px; }
+.msg-stderr-body {
+  margin: 0;
+  padding: 0 14px 10px 28px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #6b5410;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
 /* Tool result decorations: truncation note, inline images, error state */
 .tool-result-truncated {
   margin-top: 8px;
