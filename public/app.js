@@ -139,6 +139,8 @@
   const cmdMenu = $('#cmd-menu');
   const modeSelect = $('#mode-select');
   const chatAnnounce = $('#chat-announce');
+  const ctxMeter = $('#ctx-meter');
+  const ctxPopover = $('#ctx-popover');
 
   // --- Viewport height fix for mobile browsers ---
   function setVH() {
@@ -1598,17 +1600,92 @@
     beginSessionSwitch(sessionId, { blocking: options.blocking !== false, force: options.force === true, label: options.label });
   }
 
+  function formatTokens(n) {
+    if (!n && n !== 0) return '';
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+    if (n >= 10_000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    if (n >= 1000) return (n / 1000).toFixed(2).replace(/\.?0+$/, '') + 'k';
+    return String(n);
+  }
   function formatStats(totalUsage, totalCost) {
     const parts = [];
     const u = totalUsage;
-    if (u && ((u.inputTokens || 0) > 0 || (u.outputTokens || 0) > 0)) {
-      const cacheText = u.cachedInputTokens ? ` · cache ${u.cachedInputTokens}` : '';
-      parts.push(`in ${u.inputTokens || 0} · out ${u.outputTokens || 0}${cacheText}`);
+    if (u && ((u.inputTokens || 0) > 0 || (u.outputTokens || 0) > 0 || (u.cacheCreationTokens || 0) > 0 || (u.cacheReadTokens || 0) > 0)) {
+      const seg = [`↓${formatTokens(u.inputTokens || 0)}`];
+      // R40: split cache_creation vs cache_read for CLI parity
+      if (u.cacheCreationTokens) seg.push(`cc ${formatTokens(u.cacheCreationTokens)}`);
+      if (u.cacheReadTokens) seg.push(`cr ${formatTokens(u.cacheReadTokens)}`);
+      else if (u.cachedInputTokens && !u.cacheReadTokens && !u.cacheCreationTokens) {
+        // Backward compat for sessions persisted before R40 split
+        seg.push(`cache ${formatTokens(u.cachedInputTokens)}`);
+      }
+      seg.push(`↑${formatTokens(u.outputTokens || 0)}`);
+      parts.push(seg.join(' · '));
     }
     if (typeof totalCost === 'number' && totalCost > 0) {
       parts.push(`$${totalCost.toFixed(4)}`);
     }
     return parts.join(' · ');
+  }
+  // R40: Context Window Meter
+  let lastUsageDetail = null;
+  function renderCtxMeter(detail) {
+    if (!ctxMeter || !detail) return;
+    const cw = detail.contextWindow;
+    const used = detail.contextUsed || 0;
+    if (!cw) {
+      ctxMeter.hidden = true;
+      return;
+    }
+    const pct = Math.min(1, Math.max(0, used / cw));
+    ctxMeter.style.setProperty('--ctx-pct', String(pct));
+    ctxMeter.querySelector('.ctx-meter-label').textContent = `${formatTokens(used)} / ${formatTokens(cw)}`;
+    ctxMeter.dataset.level = pct >= 0.8 ? 'danger' : pct >= 0.5 ? 'warn' : '';
+    ctxMeter.hidden = false;
+    ctxMeter.title = `${(pct * 100).toFixed(1)}% 已用`;
+  }
+  function closeCtxPopover() {
+    if (!ctxPopover) return;
+    ctxPopover.hidden = true;
+    if (ctxMeter) ctxMeter.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', _onCtxOutside, true);
+    document.removeEventListener('keydown', _onCtxKey, true);
+  }
+  function _onCtxOutside(e) {
+    if (!ctxPopover.contains(e.target) && !ctxMeter.contains(e.target)) closeCtxPopover();
+  }
+  function _onCtxKey(e) {
+    if (e.key === 'Escape') { e.preventDefault(); closeCtxPopover(); }
+  }
+  function openCtxPopover() {
+    if (!ctxPopover || !lastUsageDetail) return;
+    const d = lastUsageDetail;
+    const rows = [];
+    if (d.contextWindow) rows.push(['上下文窗口', `${formatTokens(d.contextWindow)} (${(d.contextUsed / d.contextWindow * 100).toFixed(1)}%)`]);
+    if (d.maxOutputTokens) rows.push(['最大输出', formatTokens(d.maxOutputTokens)]);
+    if (d.numTurns) rows.push(['总回合数', d.numTurns]);
+    if (d.ttftMs) rows.push(['首 token 延迟', `${(d.ttftMs / 1000).toFixed(2)}s`]);
+    if (d.durationMs) rows.push(['总耗时', `${(d.durationMs / 1000).toFixed(2)}s`]);
+    if (d.durationApiMs) rows.push(['API 耗时', `${(d.durationApiMs / 1000).toFixed(2)}s`]);
+    if (d.serviceTier) rows.push(['服务等级', d.serviceTier]);
+    if (d.stopReason) rows.push(['停止原因', d.stopReason]);
+    if (d.terminalReason) rows.push(['终止原因', d.terminalReason]);
+    if (d.permissionDenials) rows.push(['权限拒绝次数', d.permissionDenials]);
+    if (typeof d.costUsd === 'number' && d.costUsd > 0) rows.push(['本轮花费', `$${d.costUsd.toFixed(4)}`]);
+    ctxPopover.innerHTML = `<p class="ctx-popover-title">本轮用量详情</p><dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>`;
+    ctxPopover.hidden = false;
+    ctxMeter.setAttribute('aria-expanded', 'true');
+    setTimeout(() => {
+      document.addEventListener('click', _onCtxOutside, true);
+      document.addEventListener('keydown', _onCtxKey, true);
+    }, 0);
+  }
+  if (ctxMeter) {
+    ctxMeter.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (ctxPopover.hidden) openCtxPopover();
+      else closeCtxPopover();
+    });
   }
 
   function setStatsDisplay(msg) {
@@ -2070,6 +2147,13 @@
       case 'system_message':
         if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         appendSystemMessage(msg.message, msg.kind || null);
+        break;
+
+      case 'usage_detail':
+        // R40: rich per-turn metrics from CLI 'result' event. Drives ctx-meter.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        lastUsageDetail = msg;
+        renderCtxMeter(msg);
         break;
 
       case 'mode_changed':

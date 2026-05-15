@@ -17,7 +17,7 @@
       document.documentElement.dataset.theme = theme;
     })();
   </script>
-  <link rel="stylesheet" href="style.54f07557b7.css">
+  <link rel="stylesheet" href="style.3d49d39b40.css">
   <link id="hljs-theme-link" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
 </head>
 <body>
@@ -82,6 +82,11 @@
           <button type="button" class="mode-option" data-mode="plan" role="menuitem"><span class="mode-pill-dot" data-mode="plan"></span>Plan<span class="mode-hint">仅规划</span></button>
         </div>
         <span id="stream-rate" class="stream-rate" hidden></span>
+        <button id="ctx-meter" class="ctx-meter" type="button" hidden aria-expanded="false" aria-haspopup="dialog" aria-label="上下文窗口用量">
+          <span class="ctx-meter-track" aria-hidden="true"><span class="ctx-meter-fill"></span></span>
+          <span class="ctx-meter-label"></span>
+        </button>
+        <div id="ctx-popover" class="ctx-popover" hidden role="tooltip"></div>
         <span id="cost-display" class="cost-display" hidden></span>
         <button id="export-btn" class="export-btn" type="button" title="导出对话为 Markdown" aria-label="导出对话为 Markdown">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -149,6 +154,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="app.ba9b7823c4.js"></script>
+  <script src="app.2df5ca0588.js"></script>
 </body>
 </html>
