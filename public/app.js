@@ -100,6 +100,7 @@
   let skipDeleteConfirm = localStorage.getItem('cc-web-skip-delete-confirm') === '1';
   let pendingInitialSessionLoad = false;
   let sessionListSafetyTimer = null;
+  let authRetried = false;
 
   // --- DOM ---
   const $ = (sel) => document.querySelector(sel);
@@ -1486,6 +1487,16 @@
     const lastMeta = lastSessionId ? getSessionMeta(lastSessionId) : null;
     if (lastMeta && normalizeAgent(lastMeta.agent) === targetAgent) {
       openSession(lastSessionId);
+      return;
+    }
+    // Fallback: if the stored last-session is stale (deleted, renamed, agent
+    // mismatch), open the most-recently-updated session for this agent instead.
+    // Without this, a first F5 lands on an empty chat area until the user
+    // manually clicks a session in the sidebar — which is the second-refresh
+    // recovery they observed.
+    const fallback = sessions.find((s) => normalizeAgent(s.agent) === targetAgent);
+    if (fallback) {
+      openSession(fallback.id);
     }
   }
 
@@ -1897,7 +1908,17 @@
         }
         if (pendingInitialSessionLoad) {
           pendingInitialSessionLoad = false;
-          syncViewForAgent(currentAgent, { preserveCurrent: false, loadLast: true });
+          // Smart agent recovery: if user's last-selected agent is empty but other
+          // agent has sessions, auto-switch on boot. Without this, a refresh into
+          // an empty tab can read as "session history disappeared" until the user
+          // manually switches tabs (which is what triggered the second-refresh
+          // recovery: setCurrentAgent on tab toggle re-renders).
+          let targetAgent = currentAgent;
+          const visibleForTarget = sessions.filter((s) => normalizeAgent(s.agent) === targetAgent);
+          if (visibleForTarget.length === 0 && sessions.length > 0) {
+            targetAgent = normalizeAgent(sessions[0].agent);
+          }
+          syncViewForAgent(targetAgent, { preserveCurrent: false, loadLast: true });
         } else if (currentSessionId && !getSessionMeta(currentSessionId)) {
           resetChatView(currentAgent);
         }
