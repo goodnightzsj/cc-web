@@ -145,6 +145,18 @@
   window.addEventListener('resize', setVH);
   window.addEventListener('orientationchange', () => setTimeout(setVH, 100));
 
+  // --- visualViewport: inject --kb-inset when soft keyboard pushes the viewport up ---
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const updateKbInset = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty('--kb-inset', `${inset}px`);
+    };
+    vv.addEventListener('resize', updateKbInset);
+    vv.addEventListener('scroll', updateKbInset);
+    updateKbInset();
+  }
+
   function buildWelcomeMarkup(agent) {
     const label = AGENT_LABELS[agent] || AGENT_LABELS.claude;
     return `<div class="welcome-msg"><div class="welcome-icon">✿</div><h3>欢迎使用 CC-Web</h3><p>开始与 ${label} 对话</p><div class="welcome-hint">按 <kbd>/</kbd> 查看指令 · <kbd>Enter</kbd> 发送</div></div>`;

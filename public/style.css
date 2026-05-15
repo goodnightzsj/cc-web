@@ -4031,3 +4031,88 @@ input[type="radio"]:focus-visible {
   .app-modal-overlay,
   .app-modal-panel { animation: none !important; }
 }
+
+/* ============ REDESIGN-14 R14: Mobile / Touch Hardening ============ */
+/* (1) iOS auto-zoom guard: coarse-pointer devices need >=16px inputs */
+@media (pointer: coarse), (max-width: 768px) {
+  #msg-input,
+  .login-box input,
+  .force-change-form input,
+  textarea,
+  input[type="text"],
+  input[type="password"],
+  input[type="email"],
+  input[type="number"],
+  input[type="search"] {
+    font-size: 16px;
+  }
+}
+
+/* (2) Touch targets >= 44x44 on coarse-pointer (Apple HIG) */
+@media (pointer: coarse) {
+  .send-btn,
+  .abort-btn,
+  .attach-btn { width: 44px; height: 44px; }
+  .menu-btn,
+  .settings-back,
+  .modal-close-btn,
+  .image-lightbox-close { min-width: 44px; min-height: 44px; }
+  .send-btn,
+  .abort-btn,
+  .attach-btn,
+  .menu-btn,
+  .new-chat-btn,
+  .new-chat-arrow,
+  .agent-switch-btn,
+  .mode-pill,
+  .chat-agent-btn {
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .msg-bubble,
+  .chat-messages { touch-action: pan-y; }
+}
+
+/* (3) Ultra-narrow (<=380px) safety net */
+@media (max-width: 380px) {
+  .chat-header { padding: 0 var(--space-4); gap: var(--space-2); }
+  .chat-agent-btn { padding: var(--space-2) var(--space-3); font-size: var(--fs-xs); }
+  .mode-pill-label { display: none; }
+  .chat-cwd { display: none !important; }
+  .input-area { padding-left: var(--space-3); padding-right: var(--space-3); }
+}
+
+/* (4) Modal immersive bottom-sheet on <=480px */
+@media (max-width: 480px) {
+  .modal-overlay,
+  .app-modal-overlay { padding: 0; align-items: flex-end; }
+  .modal-panel,
+  .app-modal-panel {
+    max-width: 100%;
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    animation: modal-slide-up 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes modal-slide-up {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+}
+@media (max-width: 480px) and (prefers-reduced-motion: reduce) {
+  .modal-panel,
+  .app-modal-panel { animation: none; }
+}
+
+/* (5) Soft-keyboard inset (driven by app.js visualViewport listener) */
+.input-area {
+  padding-bottom: max(14px, var(--safe-bottom), var(--kb-inset, 0px));
+}
+
+/* (6) Landscape short-height: collapse welcome / shrink header */
+@media (orientation: landscape) and (max-height: 480px) {
+  .welcome-msg { padding: var(--space-4); }
+  .welcome-icon { display: none; }
+  .chat-header { height: 44px; min-height: 44px; }
+}
