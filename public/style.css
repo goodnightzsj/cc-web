@@ -1492,6 +1492,37 @@ body.session-loading-active {
   width: fit-content;
 }
 
+/* "↓ 新内容" floating pill: appears when auto-scroll is suppressed because the
+   user scrolled up to read earlier output. Click to jump back to bottom. */
+.scroll-resume-pill {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--info, #6b7faa);
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  animation: scroll-resume-in 0.2s ease;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.scroll-resume-pill:hover {
+  background: color-mix(in srgb, var(--info, #6b7faa) 85%, #000);
+  transform: translateX(-50%) translateY(-1px);
+}
+.scroll-resume-pill:active { transform: translateX(-50%) translateY(0); }
+@keyframes scroll-resume-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 /* stderr stream block (CLI subprocess stderr forwarded over WS) */
 .msg-stderr {
   margin: 10px 16px;

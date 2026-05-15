@@ -2181,7 +2181,7 @@
       const frag = document.createDocumentFragment();
       messages.forEach((message) => frag.appendChild(buildMsgElement(message)));
       messagesDiv.appendChild(frag);
-      scrollToBottom();
+      scrollToBottom(true);
       return;
     }
     // Batch render: last 10 first, then next 20, then the rest
@@ -2202,7 +2202,7 @@
     const frag0 = document.createDocumentFragment();
     for (let i = batches[0][0]; i < batches[0][1]; i++) frag0.appendChild(buildMsgElement(messages[i]));
     messagesDiv.appendChild(frag0);
-    scrollToBottom();
+    scrollToBottom(true);
 
     // Render remaining batches asynchronously, prepending each
     // Use scrollHeight delta to keep current view position stable after prepend
@@ -3035,12 +3035,53 @@
     scrollToBottom();
   }
 
-  function scrollToBottom() {
+  // Auto-scroll policy: if the user scrolled up to read earlier content,
+  // don't yank them back on every text_delta / tool event during streaming.
+  // Threshold: ~96px from the bottom counts as "intentionally reading older
+  // content". `force=true` overrides (used when switching sessions).
+  const SCROLL_PIN_THRESHOLD_PX = 96;
+  function isAtBottom() {
+    const dist = messagesDiv.scrollHeight - messagesDiv.scrollTop - messagesDiv.clientHeight;
+    return dist <= SCROLL_PIN_THRESHOLD_PX;
+  }
+  function scrollToBottom(force) {
+    if (!force && !isAtBottom()) {
+      // User is reading earlier content — only refresh the custom scrollbar
+      // so its thumb tracks new content height correctly.
+      updateScrollbar();
+      showScrollResumeHint();
+      return;
+    }
+    hideScrollResumeHint();
     requestAnimationFrame(() => {
       messagesDiv.scrollTop = messagesDiv.scrollHeight;
       updateScrollbar();
     });
   }
+  // Floating "↓ 跳到底部" pill that appears when auto-scroll is suppressed
+  // and disappears when the user scrolls back to the bottom themselves.
+  let _scrollResumePill = null;
+  function showScrollResumeHint() {
+    if (_scrollResumePill && _scrollResumePill.isConnected) return;
+    _scrollResumePill = document.createElement('button');
+    _scrollResumePill.type = 'button';
+    _scrollResumePill.className = 'scroll-resume-pill';
+    _scrollResumePill.textContent = '↓ 新内容';
+    _scrollResumePill.addEventListener('click', () => {
+      hideScrollResumeHint();
+      scrollToBottom(true);
+    });
+    const wrap = messagesDiv.parentElement || document.body;
+    wrap.appendChild(_scrollResumePill);
+  }
+  function hideScrollResumeHint() {
+    if (_scrollResumePill && _scrollResumePill.isConnected) _scrollResumePill.remove();
+    _scrollResumePill = null;
+  }
+  // Also hide pill when user manually scrolls back to bottom
+  messagesDiv.addEventListener('scroll', () => {
+    if (_scrollResumePill && isAtBottom()) hideScrollResumeHint();
+  }, { passive: true });
 
   // --- Custom Scrollbar ---
   const scrollbarEl = document.getElementById('custom-scrollbar');
