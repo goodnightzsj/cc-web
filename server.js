@@ -2900,7 +2900,6 @@ function handleLoadSession(ws, sessionId) {
   const hasInitBanner = displayMessages.some((m) => m?.role === 'system' && m?.kind === 'init');
   if (!hasInitBanner && displayMessages.length > 0) {
     const isCodex = getSessionAgent(session) === 'codex';
-    // Short alias (e.g. 'opus') → resolve to the full id the CLI would report.
     const PERM_MODE_TO_CLI = { yolo: 'bypassPermissions', plan: 'plan', default: 'default' };
     const modelKey = session.model;
     const fullModel = (modelKey && MODEL_MAP[modelKey]) ? MODEL_MAP[modelKey] : modelKey;
@@ -2909,13 +2908,28 @@ function handleLoadSession(ws, sessionId) {
     if (session.cwd) parts.push(`cwd: ${session.cwd}`);
     const permLabel = PERM_MODE_TO_CLI[session.permissionMode || 'yolo'];
     if (permLabel) parts.push(permLabel);
-    displayMessages = [{
+    const synthInit = {
       role: 'system',
       kind: 'init',
       content: parts.join('\n'),
       ts: session.created || session.updated || null,
       synthetic: true,
-    }, ...displayMessages];
+    };
+    // R37: insert AFTER the first user message to mirror live timeline.
+    // The CLI is only spawned on first user submit, so the live order is:
+    //   user → init (CLI startup) → rate-limit (first API call) → assistant
+    // R34's plain prepend put the synthesized init BEFORE the first user
+    // message, breaking visual parity with live conversations.
+    const firstUserIdx = displayMessages.findIndex((m) => m?.role === 'user');
+    if (firstUserIdx === -1) {
+      displayMessages = [synthInit, ...displayMessages];
+    } else {
+      displayMessages = [
+        ...displayMessages.slice(0, firstUserIdx + 1),
+        synthInit,
+        ...displayMessages.slice(firstUserIdx + 1),
+      ];
+    }
   }
   const { recentMessages, olderChunks } = splitHistoryMessages(displayMessages);
   const effectiveCwd = session.cwd || activeProcesses.get(sessionId)?.cwd || null;
