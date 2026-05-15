@@ -4135,3 +4135,34 @@ input[type="radio"]:focus-visible {
   .welcome-icon { display: none; }
   .chat-header { height: 44px; min-height: 44px; }
 }
+
+/* ============ REDESIGN-18 R18 — Universal :focus-visible (WCAG 2.4.7 AA) ============ */
+.new-chat-btn:focus-visible,
+.new-chat-arrow:focus-visible,
+.menu-btn:focus-visible,
+.settings-btn:focus-visible,
+.chat-agent-btn:focus-visible,
+.chat-agent-option:focus-visible,
+.attach-btn:focus-visible,
+.send-btn:focus-visible,
+.abort-btn:focus-visible,
+.export-btn:focus-visible,
+.mode-option:focus-visible,
+.cmd-menu button:focus-visible,
+.settings-back:focus-visible,
+.settings-nav-card:focus-visible,
+.theme-card:focus-visible,
+.modal-btn:focus-visible,
+.modal-close-btn:focus-visible,
+.image-lightbox-close:focus-visible,
+.app-modal-panel button:focus-visible,
+.session-item:focus-visible,
+.session-item-btn:focus-visible,
+.agent-switch-btn:focus-visible,
+.tool-call > summary:focus-visible,
+.welcome-msg kbd:focus-visible,
+.notify-summary-card:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+  border-radius: var(--radius-sm);
+}
