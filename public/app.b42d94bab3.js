@@ -3657,11 +3657,80 @@
     return window.matchMedia('(max-width: 768px), (pointer: coarse)').matches;
   }
 
+  // --- Login UX (BEAUTY-1): immediate click feedback ---
+  // Adds button loading state, ripple effect, disabled re-clicks, shake-on-fail,
+  // ✓-on-success — fixes "press login → silence → not sure if it worked".
+  let loginInFlight = false;
+  function setLoginLoading(loading) {
+    loginInFlight = !!loading;
+    const btn = loginForm.querySelector('button[type="submit"]');
+    if (!btn) return;
+    if (loading) {
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+      btn.dataset.label = btn.dataset.label || btn.textContent || '登录';
+      btn.innerHTML = '<span class="login-btn-spinner"></span><span class="login-btn-text">正在登录…</span>';
+    } else {
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+      btn.textContent = btn.dataset.label || '登录';
+    }
+  }
+  function loginShake() {
+    const box = document.querySelector('.login-box');
+    if (!box) return;
+    box.classList.remove('shake');
+    void box.offsetWidth; // restart animation
+    box.classList.add('shake');
+  }
+  function loginSuccess(then) {
+    const box = document.querySelector('.login-box');
+    if (box) {
+      box.classList.add('login-success');
+      setTimeout(() => {
+        if (typeof then === 'function') then();
+      }, 280);
+    } else if (typeof then === 'function') {
+      then();
+    }
+  }
+  // Listen to auth_result to clear loading / shake / success
+  document.addEventListener('cc-web-auth-restored', () => {
+    loginSuccess(() => setLoginLoading(false));
+  });
+  document.addEventListener('cc-web-auth-failed', () => {
+    setLoginLoading(false);
+    loginShake();
+  });
+
+  // Material-style ripple on the submit button (and any [data-ripple] element)
+  function attachRipple(el) {
+    if (!el || el.dataset.rippleAttached) return;
+    el.dataset.rippleAttached = '1';
+    el.addEventListener('pointerdown', (e) => {
+      const rect = el.getBoundingClientRect();
+      const ripple = document.createElement('span');
+      ripple.className = 'ripple';
+      const size = Math.max(rect.width, rect.height) * 1.4;
+      ripple.style.width = ripple.style.height = size + 'px';
+      ripple.style.left = (e.clientX - rect.left - size / 2) + 'px';
+      ripple.style.top = (e.clientY - rect.top - size / 2) + 'px';
+      el.appendChild(ripple);
+      ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+    });
+  }
+  attachRipple(loginForm.querySelector('button[type="submit"]'));
+
   // --- Event Listeners ---
   loginForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (loginInFlight) return; // de-dupe rapid clicks
     const pw = loginPassword.value;
-    if (!pw) return;
+    if (!pw) {
+      loginShake();
+      loginPassword.focus();
+      return;
+    }
     loginError.hidden = true;
     loginPasswordValue = pw;
     // Remember password
@@ -3670,6 +3739,15 @@
     } else {
       localStorage.removeItem('cc-web-pw');
     }
+    setLoginLoading(true);
+    // Safety net: if no auth_result within 8s (network dead), stop spinner
+    setTimeout(() => {
+      if (loginInFlight) {
+        setLoginLoading(false);
+        loginError.textContent = '连接超时，请检查网络后重试。';
+        loginError.hidden = false;
+      }
+    }, 8000);
     send({ type: 'auth', password: pw });
     // Request notification permission on first user interaction
     requestNotificationPermission();

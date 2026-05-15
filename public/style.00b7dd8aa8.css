@@ -416,9 +416,78 @@ body {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.08s ease, box-shadow 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
 }
-.login-box button:hover { background: var(--accent-hover); }
+.login-box button:hover { background: var(--accent-hover); box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 35%, transparent); }
+.login-box button:active:not(:disabled) { transform: translateY(1px); }
+.login-box button:disabled { cursor: progress; opacity: 0.92; }
+.login-box button.is-loading { background: color-mix(in srgb, var(--accent) 80%, #000); }
+.login-btn-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.32);
+  border-top-color: #fff;
+  animation: login-spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes login-spin {
+  to { transform: rotate(360deg); }
+}
+.login-btn-text { letter-spacing: 0.04em; }
+
+/* Material-style ripple (BEAUTY-1) — used by login button + any [data-ripple] */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.42);
+  pointer-events: none;
+  transform: scale(0);
+  animation: ripple-out 0.55s ease-out;
+  z-index: 0;
+}
+@keyframes ripple-out {
+  to { transform: scale(2.6); opacity: 0; }
+}
+.login-box button > * { position: relative; z-index: 1; }
+
+/* Login-box shake on bad password / empty submit */
+.login-box.shake { animation: login-shake 0.4s cubic-bezier(.36,.07,.19,.97); }
+@keyframes login-shake {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+  40%, 60% { transform: translate3d(4px, 0, 0); }
+}
+.login-box.shake .login-error { animation: login-error-pulse 0.4s ease; }
+@keyframes login-error-pulse {
+  0%   { transform: translateY(-2px); opacity: 0; }
+  50%  { transform: translateY(0); opacity: 1; }
+}
+
+/* Success ✓ pulse before fading login overlay out */
+.login-box.login-success {
+  animation: login-success-pulse 0.28s ease forwards;
+}
+@keyframes login-success-pulse {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(1.02); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
+  100% { transform: scale(1); opacity: 0.85; }
+}
+
+/* Password input focus ring (more obvious than before) */
+.login-box input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: none;
+}
 .remember-label {
   display: flex;
   align-items: center;
