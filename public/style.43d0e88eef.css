@@ -4951,3 +4951,25 @@ input[type="radio"]:focus-visible {
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* ============ R54 — SSH host badge in chat header ============ */
+.ssh-host-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-3);
+  margin-left: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--info) 35%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  color: var(--info);
+  font: var(--fw-semibold) var(--fs-xs)/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: var(--ls-wide);
+  cursor: help;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 480px) {
+  .ssh-host-badge { max-width: 110px; }
+}
