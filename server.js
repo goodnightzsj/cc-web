@@ -1065,6 +1065,44 @@ function wsSend(ws, data, dropIfBacklogged = false) {
   ws.send(JSON.stringify(data));
 }
 
+const PENDING_EVENTS_MAX = 200;
+// Replayable events that should be buffered when WS is down (reconnect backfill).
+// Excludes text_delta (already in entry.fullText) and tool_start/tool_end
+// (already in entry.toolCalls).
+const REPLAYABLE_TYPES = new Set([
+  'system_message', 'thinking_delta', 'stderr_chunk',
+  'cost', 'usage', 'tool_end',
+]);
+
+function bufferReplayable(entry, payload) {
+  if (!entry || !payload || !REPLAYABLE_TYPES.has(payload.type)) return;
+  // Skip tool_end — those are already snapshotted into entry.toolCalls
+  if (payload.type === 'tool_end') return;
+  entry.pendingEvents = entry.pendingEvents || [];
+  entry.pendingEvents.push(payload);
+  if (entry.pendingEvents.length > PENDING_EVENTS_MAX) {
+    entry.pendingEvents.splice(0, entry.pendingEvents.length - PENDING_EVENTS_MAX);
+  }
+}
+
+// Send + buffer for reconnect replay. Use when caller has access to entry.
+function wsSendWithReplay(entry, data, dropIfBacklogged = false) {
+  if (entry) bufferReplayable(entry, data);
+  if (entry?.ws) wsSend(entry.ws, data, dropIfBacklogged);
+}
+
+function flushPendingEvents(entry, ws) {
+  if (!entry || !ws || ws.readyState !== 1) return 0;
+  const events = entry.pendingEvents || [];
+  if (events.length === 0) return 0;
+  for (const ev of events) {
+    try { ws.send(JSON.stringify(ev)); } catch {}
+  }
+  const n = events.length;
+  entry.pendingEvents = [];
+  return n;
+}
+
 function sanitizeId(id) {
   return String(id).replace(/[^a-zA-Z0-9\-]/g, '');
 }
@@ -2867,6 +2905,12 @@ function handleLoadSession(ws, sessionId) {
       text: entry.fullText || '',
       toolCalls: entry.toolCalls || [],
     });
+    // Backfill events that fired during the WS disconnect (system_message,
+    // thinking_delta, stderr_chunk, cost, usage, rate-limit, hook).
+    const flushed = flushPendingEvents(entry, ws);
+    if (flushed > 0) {
+      plog('INFO', 'ws_resume_backfill', { sessionId: sessionId.slice(0, 8), events: flushed });
+    }
   }
 }
 
@@ -3223,8 +3267,12 @@ function handleMessage(ws, msg, options = {}) {
         ? pendingStderr.slice(STDERR_CHUNK_MAX)
         : '';
       // 优先使用当前活动 entry.ws（reconnect 后更新），fallback 到 spawn 时捕获的 ws
-      const currentWs = activeProcesses.get(currentSessionId)?.ws || ws;
-      wsSend(currentWs, { type: 'stderr_chunk', text: chunk }, true);
+      const currentEntry = activeProcesses.get(currentSessionId);
+      const currentWs = currentEntry?.ws || ws;
+      const payload = { type: 'stderr_chunk', text: chunk };
+      // Buffer for reconnect replay even if no current ws
+      if (currentEntry) bufferReplayable(currentEntry, payload);
+      wsSend(currentWs, payload, true);
       if (pendingStderr) stderrFlushTimer = setTimeout(flushStderr, STDERR_FLUSH_MS);
     };
     proc.stderr.on('data', (buf) => {
@@ -3306,6 +3354,9 @@ function handleMessage(ws, msg, options = {}) {
     codexHomeDir: spawnSpec.codexHomeDir || '',
     codexRuntimeKey: spawnSpec.codexRuntimeKey || '',
     tailer: null,
+    // Ring buffer (≤200) for replayable events (system_message / thinking_delta /
+    // stderr_chunk / cost / usage) so reconnect after WS drop can backfill.
+    pendingEvents: [],
   };
   activeProcesses.set(currentSessionId, entry);
   sendSessionList(ws);
@@ -3416,6 +3467,7 @@ const {
   saveSession,
   setRuntimeSessionId,
   getRuntimeSessionId,
+  bufferReplayable,
 });
 
 // === Check Update ===
