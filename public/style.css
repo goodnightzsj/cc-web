@@ -4793,3 +4793,39 @@ input[type="radio"]:focus-visible {
   padding-top: var(--space-3);
   border-top: 1px dashed color-mix(in srgb, var(--info) 25%, transparent);
 }
+
+/* ============ R45 — Per-tool elapsed timer + MCP namespace badge ============ */
+.tool-call-timer {
+  font: var(--fw-medium) var(--fs-xs)/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  padding: 0 var(--space-2);
+  letter-spacing: var(--ls-wide);
+  white-space: nowrap;
+}
+.tool-call-timer:empty { display: none; }
+.tool-call-timer[data-level="warn"] { color: var(--warning); }
+.tool-call-timer[data-level="danger"] {
+  color: var(--danger);
+  animation: tool-timer-pulse 1.2s ease-in-out infinite;
+}
+@keyframes tool-timer-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tool-call-timer[data-level="danger"] { animation: none; }
+}
+
+.tool-call-mcp-badge {
+  display: inline-block;
+  margin-right: var(--space-2);
+  padding: 1px var(--space-2);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
+  font: var(--fw-semibold) 10px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: var(--ls-wider);
+  color: var(--accent);
+  vertical-align: 1px;
+}

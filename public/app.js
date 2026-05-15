@@ -2563,10 +2563,54 @@
     state.className = `tool-call-state ${toolStateClass(tool, done)}`;
     state.textContent = toolStateLabel(tool, done);
 
+    // R45: live elapsed timer chip; ticked by global startToolTimer setInterval.
+    const timer = document.createElement('span');
+    timer.className = 'tool-call-timer';
+    timer.textContent = '';
+
+    // R45: MCP namespace badge — shows server origin distinctly.
+    if (tool?.meta?.mcpServer) {
+      const badge = document.createElement('span');
+      badge.className = 'tool-call-mcp-badge';
+      badge.textContent = `mcp:${tool.meta.mcpServer}`;
+      main.insertBefore(badge, label);
+    }
+
     summary.appendChild(icon);
     summary.appendChild(main);
+    summary.appendChild(timer);
     summary.appendChild(state);
   }
+  // R45: global timer ticks every 500ms, updates .tool-call-timer text on
+  // every running .tool-call. Also sets the final 'done · 1.4s' once frozen.
+  function formatElapsed(ms) {
+    if (ms < 1000) return `${ms}ms`;
+    if (ms < 10_000) return `${(ms / 1000).toFixed(1)}s`;
+    if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+    const m = Math.floor(ms / 60_000);
+    const s = Math.round((ms % 60_000) / 1000);
+    return `${m}m${s.toString().padStart(2, '0')}s`;
+  }
+  function tickToolTimers() {
+    const now = Date.now();
+    document.querySelectorAll('.tool-call').forEach((el) => {
+      const timerEl = el.querySelector(':scope > summary > .tool-call-timer');
+      if (!timerEl) return;
+      const startedAt = Number(el.dataset.startedAt);
+      if (!startedAt) { timerEl.textContent = ''; return; }
+      const elapsedMs = el.dataset.elapsedMs ? Number(el.dataset.elapsedMs) : (now - startedAt);
+      timerEl.textContent = formatElapsed(elapsedMs);
+      // Visual escalation: warn after 30s, danger after 120s — only while running
+      if (!el.dataset.elapsedMs) {
+        if (elapsedMs >= 120_000) timerEl.dataset.level = 'danger';
+        else if (elapsedMs >= 30_000) timerEl.dataset.level = 'warn';
+        else delete timerEl.dataset.level;
+      } else {
+        delete timerEl.dataset.level;
+      }
+    });
+  }
+  setInterval(tickToolTimers, 500);
 
   function buildStructuredToolSection(labelText, bodyText) {
     const section = document.createElement('div');
@@ -3248,6 +3292,9 @@
     details.className = 'tool-call';
     details.id = `tool-${toolUseId}`;
     details.dataset.toolName = tool.name || '';
+    // R45: stamp the start time so the chip can show a live elapsed timer
+    // while running ('· 12s'). Frozen on tool_end into a final 'done · 1.4s'.
+    if (!done) details.dataset.startedAt = String(Date.now());
     if (toolKind(tool)) {
       details.dataset.toolKind = toolKind(tool);
       details.classList.add(`codex-${toolKind(tool).replace(/_/g, '-')}`);
@@ -3320,6 +3367,11 @@
   function updateToolCall(toolUseId, result, extras) {
     const el = document.getElementById(`tool-${toolUseId}`);
     if (!el) return;
+    // R45: freeze the elapsed time at completion so the chip stops ticking.
+    if (el.dataset.startedAt && !el.dataset.elapsedMs) {
+      const elapsed = Date.now() - Number(el.dataset.startedAt);
+      el.dataset.elapsedMs = String(elapsed);
+    }
     const tool = activeToolCalls.get(toolUseId) || {
       id: toolUseId,
       name: el.dataset.toolName || '',
