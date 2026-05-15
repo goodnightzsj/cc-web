@@ -2947,6 +2947,31 @@ function handleLoadSession(ws, sessionId) {
       reordered.push(...assistants, ...others, ...systems);
     }
 
+    // Step C: collapse banner visibility to the latest turn only.
+    // Real R33+ persisted init/rate-limit/hook system_messages get filtered out
+    // for every turn except the last. User feedback: 'every reply was getting
+    // a session-ready + rate-limit chip under it, which looks repetitive — only
+    // the newest reply should show them.' Keeps session.messages intact (they
+    // stay on disk for audit / future re-render strategies), purely a render
+    // suppression. Non-init/rate-limit-like system kinds aren't filtered, so
+    // mid-conversation system errors / compact summaries still render in place.
+    const COLLAPSIBLE_KINDS = new Set(['init', 'rate-limit']);
+    let lastUserIdxForFilter = -1;
+    for (let j = reordered.length - 1; j >= 0; j--) {
+      if (reordered[j]?.role === 'user') { lastUserIdxForFilter = j; break; }
+    }
+    if (lastUserIdxForFilter > 0) {
+      for (let j = 0; j < lastUserIdxForFilter; j++) {
+        const m = reordered[j];
+        if (m?.role === 'system' && COLLAPSIBLE_KINDS.has(m?.kind)) {
+          reordered[j] = null;
+        }
+      }
+      for (let j = reordered.length - 1; j >= 0; j--) {
+        if (reordered[j] === null) reordered.splice(j, 1);
+      }
+    }
+
     // Step B: synthesize one init banner for the last turn iff it lacks one.
     const isCodex = getSessionAgent(session) === 'codex';
     const PERM_MODE_TO_CLI = { yolo: 'bypassPermissions', plan: 'plan', default: 'default' };
@@ -2959,7 +2984,7 @@ function handleLoadSession(ws, sessionId) {
     if (permLabel) parts.push(permLabel);
     const synthInitContent = parts.join('\n');
 
-    // Locate the last turn: from last user message to end.
+    // Locate the last turn after Step C filtering.
     let lastUserIdx = -1;
     for (let j = reordered.length - 1; j >= 0; j--) {
       if (reordered[j]?.role === 'user') { lastUserIdx = j; break; }
