@@ -3575,6 +3575,16 @@
   function sendMessage() {
     const text = msgInput.value.trim();
     if ((!text && pendingAttachments.length === 0) || isGenerating || isBlockingSessionLoad()) return;
+    // WS health guard: send() silently drops when readyState !== 1.
+    // Without this, on mobile background→foreground (visibilitychange→connect race)
+    // or any reconnect window, the user types + hits Enter, the input/attachments
+    // get cleared and the typing indicator appears, but the message never reaches
+    // the server. The user is stuck in a fake "generating" state.
+    if (!ws || ws.readyState !== 1) {
+      appendError('连接尚未就绪，正在重连…请稍候再发送（输入框已为你保留）。');
+      if (!ws || ws.readyState > 1) connect();
+      return;
+    }
     hideCmdMenu();
     hideOptionPicker();
 
