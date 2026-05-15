@@ -2482,6 +2482,13 @@
 
 	  function buildMsgElement(m) {
 	    const el = createMsgElement(m.role, m.content, m.attachments || []);
+	    // R36: historical system_messages stored by R33+ (and synthesized by R34
+	    // for legacy sessions) carry a kind field. Mirror appendSystemMessage's
+	    // dataset.kind so .msg.system[data-kind="init"|"rate-limit"|"hook"|...]
+	    // CSS variants apply identically on historical bubbles as on live ones.
+	    if (m.role === 'system' && m.kind) {
+	      el.dataset.kind = m.kind;
+	    }
 	    if (m.role === 'assistant' && m.aborted) {
 	      el.dataset.aborted = '1';
 	      const bubble = el.querySelector('.msg-bubble');
