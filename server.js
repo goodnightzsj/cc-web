@@ -1672,6 +1672,15 @@ function handleProcessComplete(sessionId, exitCode, signal) {
     if (entry.aborted) msg.aborted = true;
     // R43: persist non-end_turn stop reason so historical render can show the chip
     if (entry.lastStopReason) msg.stopReason = entry.lastStopReason;
+    // R47: persist the per-turn usage_detail so a re-loaded session can
+    // re-hydrate ctx-meter + drill-down popover from the assistant message
+    // itself, instead of permanently losing the data once the ws frame is gone.
+    if (entry.lastUsageDetail) {
+      const ud = { ...entry.lastUsageDetail };
+      delete ud.type;
+      delete ud.sessionId;
+      msg.usageDetail = ud;
+    }
     session.messages.push(msg);
     session.updated = new Date().toISOString();
     if (!entry.ws) session.hasUnread = true;

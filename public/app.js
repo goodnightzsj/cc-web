@@ -2660,6 +2660,26 @@
 	    if (m.role === 'assistant' && m.stopReason) {
 	      setTimeout(() => appendStopReasonChip(el, m.stopReason), 0);
 	    }
+	    // R47: hydrate per-turn usageDetail so ctx-meter + popover reflect
+	    // the saved turn (otherwise reloads keep showing the last-live data).
+	    if (m.role === 'assistant' && m.usageDetail) {
+	      lastUsageDetail = m.usageDetail;
+	      renderCtxMeter(m.usageDetail);
+	    }
+	    // R47: tool elapsed time was server-side stamped (R45 lived only on
+	    // client Date.now()). Replay frozen elapsedMs onto the chip dataset so
+	    // the timer span renders the correct value.
+	    if (m.role === 'assistant' && Array.isArray(m.toolCalls)) {
+	      setTimeout(() => {
+	        for (const tc of m.toolCalls) {
+	          if (!tc?.id) continue;
+	          const tEl = el.querySelector(`#tool-${CSS.escape(tc.id)}`);
+	          if (!tEl) continue;
+	          if (tc.elapsedMs != null) tEl.dataset.elapsedMs = String(tc.elapsedMs);
+	          if (tc.startedAt && !tEl.dataset.startedAt) tEl.dataset.startedAt = String(tc.startedAt);
+	        }
+	      }, 0);
+	    }
 	    if (m.role === 'assistant' && m.aborted) {
 	      el.dataset.aborted = '1';
 	      const bubble = el.querySelector('.msg-bubble');
