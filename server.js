@@ -2037,6 +2037,21 @@ wss.on('connection', (ws, req) => {
           mustChangePassword: !!authConfig.mustChange,
           homeDir: process.env.HOME || process.env.USERPROFILE || '',
         });
+        // R32: piggyback last-session info into the auth response when the
+        // client tells us which session it last had open. This saves 2 RTT
+        // (no client list_sessions → no client load_session) so the chat
+        // history renders immediately after auth instead of after three
+        // round-trips. The session_info MUST be sent before session_list
+        // so that by the time the client's syncViewForAgent runs, the
+        // currentSessionId is already set — the openSession path then
+        // short-circuits via the (sessionId === currentSessionId &&
+        // !activeSessionLoad) guard and no redundant load_session is sent.
+        if (msg.lastSessionId && /^[a-zA-Z0-9_-]{8,64}$/.test(msg.lastSessionId)) {
+          try {
+            const sess = loadSession(msg.lastSessionId);
+            if (sess) handleLoadSession(ws, msg.lastSessionId);
+          } catch {}
+        }
         sendSessionList(ws);
       } else {
         const justBanned = recordAuthFailure(clientIP);

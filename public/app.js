@@ -1800,7 +1800,13 @@
 
     ws.onopen = () => {
       reconnectAttempts = 0;
-      if (authToken) send({ type: 'auth', token: authToken });
+      if (authToken) {
+        // R32: hint server which session to piggyback, eliminating 2 RTT for cold boot
+        const lastId = localStorage.getItem(`cc-web-session-${normalizeAgent(currentAgent)}`);
+        const payload = { type: 'auth', token: authToken };
+        if (lastId) payload.lastSessionId = lastId;
+        send(payload);
+      }
     };
 
     ws.onmessage = (e) => {
