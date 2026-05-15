@@ -96,6 +96,10 @@
   let uploadingAttachments = [];
   let loginPasswordValue = ''; // store login password for force-change flow
   let currentCwd = null;
+  // R54: SSH remote-task state for the host badge in chat header.
+  let currentTaskMode = 'local';
+  let currentSshHostId = '';
+  let currentRemoteCwd = '';
   let currentSessionRunning = false;
   let skipDeleteConfirm = localStorage.getItem('cc-web-skip-delete-confirm') === '1';
   let pendingInitialSessionLoad = false;
@@ -127,6 +131,7 @@
   const chatAgentMenu = $('#chat-agent-menu');
   const chatRuntimeState = $('#chat-runtime-state');
   const chatCwd = $('#chat-cwd');
+  const sshHostBadge = $('#ssh-host-badge');
   const costDisplay = $('#cost-display');
   const attachmentTray = $('#attachment-tray');
   const imageUploadInput = $('#image-upload-input');
@@ -993,6 +998,14 @@
       isRunning: !!payload.isRunning,
       historyPending: !!payload.historyPending,
       complete: options.complete !== undefined ? !!options.complete : !payload.historyPending,
+      // R54: SSH remote-task fields surface 'this session runs on host X' in
+      // the chat header. Server has emitted these on session_list/session_info
+      // for a while, but normalize was throwing them away.
+      taskMode: payload.taskMode || 'local',
+      sshHostId: payload.sshHostId || '',
+      remoteCwd: payload.remoteCwd || '',
+      historyTotal: typeof payload.historyTotal === 'number' ? payload.historyTotal : null,
+      historyBuffered: typeof payload.historyBuffered === 'number' ? payload.historyBuffered : null,
     };
   }
 
@@ -1357,6 +1370,23 @@
       chatCwd.title = '';
     }
     chatCwd.hidden = !currentCwd || (currentSessionRunning && shouldOverlayRuntimeBadge());
+    updateSshHostBadge();
+  }
+  // R54: render SSH host badge whenever current session has taskMode='ssh'.
+  // Hides on local sessions or mobile-running overlay state to mirror cwd.
+  function updateSshHostBadge() {
+    if (!sshHostBadge) return;
+    if (currentTaskMode !== 'ssh' || !currentSshHostId) {
+      sshHostBadge.hidden = true;
+      sshHostBadge.textContent = '';
+      sshHostBadge.title = '';
+      return;
+    }
+    sshHostBadge.textContent = '⌁ ' + currentSshHostId;
+    const tipParts = ['SSH 远程主机：' + currentSshHostId];
+    if (currentRemoteCwd) tipParts.push('远端 cwd：' + currentRemoteCwd);
+    sshHostBadge.title = tipParts.join('\n');
+    sshHostBadge.hidden = currentSessionRunning && shouldOverlayRuntimeBadge();
   }
 
   function setCurrentSessionRunningState(isRunning) {
@@ -1414,6 +1444,10 @@
     clearSessionLoading();
     setCurrentSessionRunningState(false);
     currentCwd = null;
+    // R54: reset SSH state on session reset
+    currentTaskMode = 'local';
+    currentSshHostId = '';
+    currentRemoteCwd = '';
     currentModel = currentAgent === 'claude' ? 'opus' : '';
     isGenerating = false;
     pendingText = '';
@@ -1454,6 +1488,10 @@
     setCurrentSessionRunningState(snapshot.isRunning);
     setStatsDisplay(snapshot);
     currentCwd = snapshot.cwd || null;
+    // R54: pick up SSH remote task state from snapshot
+    currentTaskMode = snapshot.taskMode || 'local';
+    currentSshHostId = snapshot.sshHostId || '';
+    currentRemoteCwd = snapshot.remoteCwd || '';
     updateCwdBadge();
     if (snapshot.mode && MODE_LABELS[snapshot.mode]) {
       currentMode = snapshot.mode;
