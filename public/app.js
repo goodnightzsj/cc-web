@@ -460,7 +460,7 @@
       modal.querySelector('#repo-modal-ok').addEventListener('click', () => {
         const name = modal.querySelector('#repo-name').value.trim();
         const url = modal.querySelector('#repo-url').value.trim();
-        if (!name || !url) { alert('请填写名称和 URL'); return; }
+        if (!name || !url) { appAlert('请填写名称和 URL'); return; }
         const data = {
           id: draft.id || '',
           name,
@@ -563,7 +563,7 @@
       modal.querySelector('#host-modal-ok').addEventListener('click', () => {
         const name = modal.querySelector('#host-name').value.trim();
         const host = modal.querySelector('#host-host').value.trim();
-        if (!name || !host) { alert('请填写名称和地址'); return; }
+        if (!name || !host) { appAlert('请填写名称和地址'); return; }
         const authType = modal.querySelector('input[name="host-auth-type"]:checked')?.value || 'key';
         const data = {
           id: draft.id || '',
@@ -671,6 +671,76 @@
     if (value === null || value === undefined) return value;
     return JSON.parse(JSON.stringify(value));
   }
+
+  // ============ App Modal API (REDESIGN-1) ============
+  // Replaces native alert/confirm/prompt — those break washi theme, freeze
+  // animations, show OS-system fonts/English buttons on iOS. This API reuses
+  // existing .modal-overlay / .modal-panel / .modal-btn-primary / .modal-text-input
+  // CSS so it inherits all 3 themes (washi/coolvibe/editorial) automatically.
+  // Returns Promise<undefined|boolean|string|null>:
+  //   alert   → undefined on dismiss
+  //   confirm → true (OK) / false (cancel/Esc/outside-click)
+  //   prompt  → string value (OK) / null (cancel/Esc/outside-click)
+  function appModal({ type = 'alert', message = '', defaultValue = '', okText, cancelText } = {}) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'modal-overlay app-modal-overlay';
+      const finalOkText = okText || (type === 'confirm' ? '确定' : '好');
+      const finalCancelText = cancelText || '取消';
+      const showCancel = type !== 'alert';
+      overlay.innerHTML = `
+        <div class="modal-panel app-modal-panel" role="dialog" aria-modal="true">
+          <div class="app-modal-message"></div>
+          ${type === 'prompt' ? '<input class="modal-text-input app-modal-prompt-input" autocomplete="off">' : ''}
+          <div class="app-modal-footer">
+            ${showCancel ? `<button class="modal-btn-secondary" data-act="cancel">${escapeHtml(finalCancelText)}</button>` : ''}
+            <button class="modal-btn-primary" data-act="ok">${escapeHtml(finalOkText)}</button>
+          </div>
+        </div>`;
+      // textContent assignment preserves \n + avoids XSS
+      overlay.querySelector('.app-modal-message').textContent = message;
+      const input = overlay.querySelector('.app-modal-prompt-input');
+      if (input) input.value = defaultValue;
+      let resolved = false;
+      const close = (val) => {
+        if (resolved) return;
+        resolved = true;
+        overlay.remove();
+        document.removeEventListener('keydown', onKey, true);
+        resolve(val);
+      };
+      const onKey = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          close(type === 'alert' ? undefined : (type === 'confirm' ? false : null));
+        } else if (e.key === 'Enter' && document.activeElement !== input) {
+          // Enter on the panel (not inside textarea/multiline) → OK
+          e.preventDefault();
+          close(type === 'alert' ? undefined : (type === 'confirm' ? true : (input ? input.value : undefined)));
+        } else if (e.key === 'Enter' && input && document.activeElement === input) {
+          e.preventDefault();
+          close(input.value);
+        }
+      };
+      overlay.addEventListener('click', (e) => {
+        const act = e.target.closest('[data-act]')?.dataset.act;
+        if (act === 'ok') {
+          close(type === 'alert' ? undefined : (type === 'confirm' ? true : input.value));
+        } else if (act === 'cancel') {
+          close(type === 'confirm' ? false : null);
+        } else if (e.target === overlay) {
+          // click on backdrop = cancel
+          close(type === 'alert' ? undefined : (type === 'confirm' ? false : null));
+        }
+      });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(overlay);
+      setTimeout(() => { (input || overlay.querySelector('.modal-btn-primary')).focus(); if (input) input.select(); }, 0);
+    });
+  }
+  const appAlert = (msg, opts) => appModal({ type: 'alert', message: msg, ...(opts || {}) });
+  const appConfirm = (msg, opts) => appModal({ type: 'confirm', message: msg, ...(opts || {}) });
+  const appPrompt = (msg, def = '', opts) => appModal({ type: 'prompt', message: msg, defaultValue: def, ...(opts || {}) });
 
   function cloneMessages(messages) {
     return Array.isArray(messages) ? deepClone(messages) : [];
@@ -4379,12 +4449,12 @@
             Agent 直接使用本机 <code>~/.claude/settings.json</code> 中的 API 信息，不会覆盖或修改本机配置。
           </div>
         `;
-        panel.querySelector('#claude-tpl-select').addEventListener('change', (e) => {
+        panel.querySelector('#claude-tpl-select').addEventListener('change', async (e) => {
           if (e.target.value === '__new__') {
-            const newName = prompt('输入新模板名称:');
+            const newName = await appPrompt('输入新模板名称:');
             if (!newName || !newName.trim()) { e.target.value = '__local__'; return; }
             const n = newName.trim();
-            if (modelEditingTemplates.find(t => t.name === n)) { alert('模板名称已存在'); e.target.value = '__local__'; return; }
+            if (modelEditingTemplates.find(t => t.name === n)) { appAlert('模板名称已存在'); e.target.value = '__local__'; return; }
             modelEditingTemplates.push({ name: n, apiKey: '', apiBase: '', defaultModel: '', opusModel: '', sonnetModel: '', haikuModel: '' });
             modelActiveTemplate = n;
             renderClaudeConfigArea();
@@ -4420,12 +4490,12 @@
         <div class="settings-inline-note">${summary}</div>
       `;
 
-      panel.querySelector('#claude-tpl-select').addEventListener('change', (e) => {
+      panel.querySelector('#claude-tpl-select').addEventListener('change', async (e) => {
         if (e.target.value === '__new__') {
-          const newName = prompt('输入新模板名称:');
+          const newName = await appPrompt('输入新模板名称:');
           if (!newName || !newName.trim()) { e.target.value = escapeHtml(modelActiveTemplate); return; }
           const n = newName.trim();
-          if (modelEditingTemplates.find(t => t.name === n)) { alert('模板名称已存在'); e.target.value = escapeHtml(modelActiveTemplate); return; }
+          if (modelEditingTemplates.find(t => t.name === n)) { appAlert('模板名称已存在'); e.target.value = escapeHtml(modelActiveTemplate); return; }
           modelEditingTemplates.push({ name: n, apiKey: '', apiBase: '', defaultModel: '', opusModel: '', sonnetModel: '', haikuModel: '' });
           modelActiveTemplate = n;
           renderClaudeConfigArea();
@@ -4441,9 +4511,9 @@
       panel.querySelector('#model-tpl-edit').addEventListener('click', () => openTplEditModal());
       const delBtn = panel.querySelector('#model-tpl-del');
       if (delBtn) {
-        delBtn.addEventListener('click', () => {
+        delBtn.addEventListener('click', async () => {
           if (!modelActiveTemplate) return;
-          if (!confirm(`确认删除模板「${modelActiveTemplate}」?`)) return;
+          if (!(await appConfirm(`确认删除模板「${modelActiveTemplate}」?`))) return;
           modelEditingTemplates = modelEditingTemplates.filter(t => t.name !== modelActiveTemplate);
           modelActiveTemplate = modelEditingTemplates[0]?.name || '';
           renderClaudeConfigArea();
@@ -4558,7 +4628,7 @@
       modal.querySelector('#tpl-ed-ok').addEventListener('click', () => {
         const newName = modal.querySelector('#tpl-ed-name').value.trim();
         if (newName && newName !== tpl.name) {
-          if (modelEditingTemplates.find(t => t.name === newName && t !== tpl)) { alert('模板名称已存在'); return; }
+          if (modelEditingTemplates.find(t => t.name === newName && t !== tpl)) { appAlert('模板名称已存在'); return; }
           tpl.name = newName;
           modelActiveTemplate = newName;
         }
@@ -4767,9 +4837,9 @@
       panel.querySelector('#codex-profile-edit').addEventListener('click', () => {
         openCodexProfileModal(codexActiveProfile);
       });
-      panel.querySelector('#codex-profile-del').addEventListener('click', () => {
+      panel.querySelector('#codex-profile-del').addEventListener('click', async () => {
         if (!codexActiveProfile) return;
-        if (!confirm(`确认删除 Codex Profile「${codexActiveProfile}」?`)) return;
+        if (!(await appConfirm(`确认删除 Codex Profile「${codexActiveProfile}」?`))) return;
         codexEditingProfiles = codexEditingProfiles.filter((profile) => profile.name !== codexActiveProfile);
         codexActiveProfile = codexEditingProfiles[0]?.name || '';
         renderCodexConfigArea();
@@ -4848,7 +4918,7 @@
       customEndpointCb.addEventListener('change', () => {
         endpointInput.style.display = customEndpointCb.checked ? '' : 'none';
       });
-      fetchBtn.addEventListener('click', () => {
+      fetchBtn.addEventListener('click', async () => {
         const apiBase = modal.querySelector('#codex-profile-apibase').value.trim();
         const apiKey = modal.querySelector('#codex-profile-apikey').value.trim();
         if (!apiBase || !apiKey) {
@@ -4860,7 +4930,7 @@
         fetchBtn.disabled = true;
         fetchStatus.textContent = '正在获取...';
         fetchStatus.style.color = 'var(--text-secondary)';
-        _onFetchModelsResult = (result) => {
+        _onFetchModelsResult = async (result) => {
           _onFetchModelsResult = null;
           fetchBtn.disabled = false;
           if (result.success) {
@@ -4869,7 +4939,7 @@
             const currentText = modelListTextarea.value.trim();
             if (!currentText) {
               modelListTextarea.value = fetchedText;
-            } else if (currentText !== fetchedText && confirm('是否使用拉取结果覆盖当前 /model 候选列表？')) {
+            } else if (currentText !== fetchedText && await appConfirm('是否使用拉取结果覆盖当前 /model 候选列表？')) {
               modelListTextarea.value = fetchedText;
             }
             if (!defaultModelInput.value.trim() && result.models[0]) {
@@ -4902,14 +4972,14 @@
         const apiBase = modal.querySelector('#codex-profile-apibase').value.trim();
         const model = defaultModelInput.value.trim();
         const models = _parseCodexModelListText(modelListTextarea.value);
-        if (!name) { alert('请填写 Profile 名称'); return; }
-        if (!apiKey) { alert('请填写 API Key'); return; }
-        if (!apiBase) { alert('请填写 API Base URL'); return; }
-        if (!model) { alert('请填写模型'); return; }
-        if (!models.length) { alert('请至少填写一个 /model 候选模型'); return; }
+        if (!name) { appAlert('请填写 Profile 名称'); return; }
+        if (!apiKey) { appAlert('请填写 API Key'); return; }
+        if (!apiBase) { appAlert('请填写 API Base URL'); return; }
+        if (!model) { appAlert('请填写模型'); return; }
+        if (!models.length) { appAlert('请至少填写一个 /model 候选模型'); return; }
         if (!models.includes(model)) models.unshift(model);
         const existing = codexEditingProfiles.find((profile) => profile.name === name);
-        if (existing && existing !== current) { alert('Profile 名称已存在'); return; }
+        if (existing && existing !== current) { appAlert('Profile 名称已存在'); return; }
         if (current) {
           current.name = name;
           current.apiKey = apiKey;
@@ -5451,7 +5521,7 @@
           cwd = editedItems[selectedLocalIndex] || null;
         }
         if (!cwd) {
-          alert('请选择或输入工作目录');
+          appAlert('请选择或输入工作目录');
           return;
         }
         close();
@@ -5460,7 +5530,7 @@
       } else {
         // Remote task
         if (!selectedHostId) {
-          alert('请选择一个 SSH 主机');
+          appAlert('请选择一个 SSH 主机');
           return;
         }
         const remoteCwd = remoteView.querySelector('#ns-remote-cwd')?.value?.trim() || '';
@@ -5539,11 +5609,11 @@
           const btn = document.createElement('button');
           btn.className = 'import-item-btn';
           btn.textContent = sess.alreadyImported ? '重新导入' : '导入';
-          btn.addEventListener('click', () => {
+          btn.addEventListener('click', async () => {
             if (sess.alreadyImported) {
-              if (!confirm('已导入过此会话，重新导入将覆盖已有内容。确认继续？')) return;
+              if (!(await appConfirm('已导入过此会话，重新导入将覆盖已有内容。确认继续？'))) return;
             } else {
-              if (!confirm('由于 cc-web 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？')) return;
+              if (!(await appConfirm('由于 cc-web 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？'))) return;
             }
             close();
             send({ type: 'import_native_session', sessionId: sess.sessionId, projectDir: group.dir });
@@ -5638,10 +5708,10 @@
         const btn = document.createElement('button');
         btn.className = 'import-item-btn';
         btn.textContent = sess.alreadyImported ? '重新导入' : '导入';
-        btn.addEventListener('click', () => {
-          const confirmed = sess.alreadyImported
-            ? confirm('已导入过此 Codex 会话，重新导入将覆盖已有内容。确认继续？')
-            : confirm('将解析本地 Codex rollout 历史并导入当前 Web 视图。确认继续？');
+        btn.addEventListener('click', async () => {
+          const confirmed = await appConfirm(sess.alreadyImported
+            ? '已导入过此 Codex 会话，重新导入将覆盖已有内容。确认继续？'
+            : '将解析本地 Codex rollout 历史并导入当前 Web 视图。确认继续？');
           if (!confirmed) return;
           close();
           send({ type: 'import_codex_session', threadId: sess.threadId, rolloutPath: sess.rolloutPath });
