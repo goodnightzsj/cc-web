@@ -3120,6 +3120,21 @@ function handleMessage(ws, msg, options = {}) {
   if (attachments.length > 0 && resolvedAttachments.length === 0) {
     return wsSend(ws, { type: 'error', message: '图片附件已过期或不可用，请重新上传后再发送。' });
   }
+  // Partial-drop visibility: tell the user that some attachments were skipped
+  // (otherwise they upload 3 images, the model sees 2, and they have no way to know).
+  const droppedCount = attachments.length - resolvedAttachments.length;
+  if (droppedCount > 0) {
+    wsSend(ws, {
+      type: 'system_message',
+      kind: 'attachments-dropped',
+      message: `${droppedCount} 张图片已过期或不可用被跳过（共上传 ${attachments.length} 张，实际发送 ${resolvedAttachments.length} 张）`,
+    });
+    plog('WARN', 'attachments_partial_drop', {
+      sessionId: (sessionId || '').slice(0, 8),
+      requested: attachments.length,
+      sent: resolvedAttachments.length,
+    });
+  }
   if (!normalizedText && resolvedAttachments.length === 0) return;
 
   const savedAttachments = resolvedAttachments.map((attachment) => ({
