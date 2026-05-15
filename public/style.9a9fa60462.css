@@ -990,7 +990,7 @@ body.session-loading-active {
   border: 1px solid var(--border-color);
   border-radius: 14px;
   background: rgba(255, 252, 248, 0.98);
-  box-shadow: 0 18px 40px rgba(45, 31, 20, 0.14);
+  box-shadow: var(--shadow-4);
   backdrop-filter: blur(14px);
   z-index: 80;
 }
@@ -1791,7 +1791,7 @@ body.session-loading-active {
   background: var(--info, #6b7faa);
   border: none;
   border-radius: 16px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-3);
   cursor: pointer;
   letter-spacing: 0.02em;
   animation: scroll-resume-in 0.2s ease;
@@ -1986,7 +1986,7 @@ body.session-loading-active {
   max-width: 92vw;
   max-height: 92vh;
   object-fit: contain;
-  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-5);
   border-radius: 6px;
   transform-origin: center center;
   transition: transform 0.05s linear;
@@ -2354,7 +2354,7 @@ body.session-loading-active {
   background: #fff;
   border: 1px solid var(--border-color);
   border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(45, 31, 20, 0.12);
+  box-shadow: var(--shadow-2);
   padding: var(--space-3);
   min-width: 240px;
   max-width: 320px;
@@ -2498,7 +2498,7 @@ body.session-loading-active {
 }
 .input-wrapper:focus-within {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-light);
+  box-shadow: var(--shadow-focus);
 }
 #msg-input {
   flex: 1;
@@ -2659,7 +2659,7 @@ body.session-loading-active {
   border-radius: 10px;
   font-size: var(--fs-md);
   font-weight: 500;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  box-shadow: var(--shadow-3);
   z-index: 200;
   opacity: 0;
   transform: translateY(-10px);
@@ -2711,7 +2711,7 @@ body.session-loading-active {
   max-width: 420px;
   max-height: 85vh;
   overflow-y: auto;
-  box-shadow: 0 8px 32px rgba(45, 31, 20, 0.12);
+  box-shadow: var(--shadow-4);
   padding: var(--space-8) var(--space-7);
   animation: fadeIn 0.25s ease;
 }
@@ -2879,7 +2879,7 @@ body.session-loading-active {
 .settings-nav-card:hover {
   transform: translateY(-1px);
   border-color: rgba(192, 85, 58, 0.24);
-  box-shadow: 0 12px 24px rgba(45, 31, 20, 0.06);
+  box-shadow: var(--shadow-3);
 }
 .settings-nav-card-main {
   display: flex;
@@ -3036,7 +3036,7 @@ body.session-loading-active {
   border-radius: 20px;
   width: 90%;
   max-width: 400px;
-  box-shadow: 0 8px 32px rgba(45, 31, 20, 0.15);
+  box-shadow: var(--shadow-5);
   animation: fadeIn 0.25s ease;
 }
 .force-change-panel .login-logo {
@@ -3163,7 +3163,7 @@ body.session-loading-active {
   background: #fff;
   border: 1px solid var(--border-color);
   border-radius: 10px;
-  box-shadow: 0 4px 16px rgba(45,31,20,0.12);
+  box-shadow: var(--shadow-3);
   z-index: 200;
   overflow: hidden;
 }
@@ -3720,7 +3720,7 @@ html[data-theme='coolvibe'] .settings-back:hover {
 /* theme-card hover lift refinement (works alongside existing :hover rule) */
 .theme-card { will-change: transform; }
 .theme-card:hover {
-  box-shadow: 0 8px 20px rgba(45, 31, 20, 0.08);
+  box-shadow: var(--shadow-3);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3742,7 +3742,7 @@ html[data-theme='coolvibe'] .settings-back:hover {
 }
 .tool-call > summary:hover {
   transform: translateY(-0.5px);
-  box-shadow: 0 1px 0 rgba(45, 31, 20, 0.06), 0 4px 10px -6px rgba(45, 31, 20, 0.18);
+  box-shadow: var(--shadow-1), var(--shadow-3);
 }
 
 /* Running: low-alpha brand-tinted sweep slides L→R across summary (1.8s) */
