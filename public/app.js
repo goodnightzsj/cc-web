@@ -1612,7 +1612,11 @@
   }
 
   function setStatsDisplay(msg) {
-    costDisplay.textContent = formatStats(msg?.totalUsage, msg?.totalCost) || '';
+    const text = formatStats(msg?.totalUsage, msg?.totalCost) || '';
+    costDisplay.textContent = text;
+    // The HTML `hidden` attribute is more aggressive than CSS :empty rule;
+    // toggle it so the chip becomes visible whenever there's actual stats text.
+    costDisplay.hidden = !text;
   }
 
   // --- Stream rate (B): rolling 5s window, ~chars/4 = approx tokens ---

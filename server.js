@@ -2887,7 +2887,30 @@ function handleLoadSession(ws, sessionId) {
       saveSession(session);
     }
   }
-  const { recentMessages, olderChunks } = splitHistoryMessages(session.messages);
+  // R34: synthesize a one-line init banner for historical sessions that pre-date
+  // R33 (system_message persistence). Without this, conversations created before
+  // 8aa4225 carry no model / cwd / mode context in their messages array — the
+  // sidebar can show the conversation but the chat area lacks the 'Claude Code
+  // 已就绪 · model' banner that the live conversation has. We synthesize, not
+  // backfill, so the session file stays untouched.
+  let displayMessages = Array.isArray(session.messages) ? session.messages : [];
+  const hasInitBanner = displayMessages.some((m) => m?.role === 'system' && m?.kind === 'init');
+  if (!hasInitBanner && displayMessages.length > 0) {
+    const isCodex = getSessionAgent(session) === 'codex';
+    const modelLabel = sessionModelLabel(session);
+    const parts = [];
+    parts.push(`${isCodex ? 'Codex CLI' : 'Claude Code'} 已就绪${modelLabel ? ' · ' + modelLabel : ''}`);
+    if (session.cwd) parts.push(`cwd: ${session.cwd}`);
+    if (session.permissionMode && session.permissionMode !== 'yolo') parts.push(session.permissionMode);
+    displayMessages = [{
+      role: 'system',
+      kind: 'init',
+      content: parts.join('\n'),
+      ts: session.created || session.updated || null,
+      synthetic: true,
+    }, ...displayMessages];
+  }
+  const { recentMessages, olderChunks } = splitHistoryMessages(displayMessages);
   const effectiveCwd = session.cwd || activeProcesses.get(sessionId)?.cwd || null;
 
   // Detach ws from any previous session's process
