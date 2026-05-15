@@ -3732,8 +3732,15 @@
       e.preventDefault();
       inputWrapper.classList.add('drag-active');
     });
+    // dragleave fires for every child boundary; only clear when the cursor
+    // truly left the wrapper (relatedTarget outside or null = left window).
+    // Without this, drag-then-cancel over textarea/buttons leaves the
+    // highlighted border stuck until next drag/drop or page reload.
     inputWrapper.addEventListener('dragleave', (e) => {
-      if (e.target === inputWrapper) inputWrapper.classList.remove('drag-active');
+      const next = e.relatedTarget;
+      if (!next || !inputWrapper.contains(next)) {
+        inputWrapper.classList.remove('drag-active');
+      }
     });
     inputWrapper.addEventListener('drop', (e) => {
       e.preventDefault();
