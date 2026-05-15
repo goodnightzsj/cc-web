@@ -13,7 +13,7 @@
   --bg-bubble-assistant: #fff9f2;  /* 練色 warm white */
   --text-primary: #2d1f14;         /* 黒茶 dark brown */
   --text-secondary: #6b5a4d;       /* 栗色 chestnut */
-  --text-muted: #9a8b7d;           /* 灰茶 gray-brown */
+  --text-muted: #766858;           /* 灰茶 gray-brown — R20: bumped from #9a8b7d to clear WCAG 1.4.3 AA (4.57:1 vs --bg-primary) */
   --border-color: #ddd0c0;         /* 枯色 withered */
   --accent: #c0553a;               /* 朱色 vermillion */
   --accent-hover: #a84530;         /* 深朱 deep vermillion */
@@ -199,7 +199,7 @@ html[data-theme='coolvibe'] {
   --bg-bubble-assistant: #ffffff;
   --text-primary: #0d1b1f;
   --text-secondary: #46606a;
-  --text-muted: #6f8790;
+  --text-muted: #54707a;           /* R20: WCAG 1.4.3 AA fix (4.74:1 vs coolvibe --bg-primary) */
   --border-color: #cfe0e6;
   --accent: #0891b2;
   --accent-hover: #0b7289;
@@ -444,7 +444,7 @@ html[data-theme='editorial'] {
   --bg-bubble-assistant: #fbf7f0;
   --text-primary: #201b17;
   --text-secondary: #5a5148;
-  --text-muted: #8a7d71;
+  --text-muted: #6e6256;           /* R20: WCAG 1.4.3 AA fix (5.20:1 vs editorial --bg-primary) */
   --border-color: #d8ccba;
   --accent: #8b5e3c;
   --accent-hover: #71482d;
