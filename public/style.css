@@ -3512,3 +3512,81 @@ html[data-theme='coolvibe'] .settings-back:hover {
   .theme-card-swatch,
   .theme-card.active .theme-card-swatch { animation: none; transition: none; }
 }
+
+/* ============ Tool-call state machine liveness (BEAUTY-6) ============ */
+/* Five complementary cues that turn the tool-call's invisible state machine
+   into felt events: running sweep, done pop, error shake, error border flash,
+   summary hover lift. CSS-only — applyToolSummary already rebuilds the
+   .tool-call-state DOM node when state changes, so animations re-fire
+   automatically with no JS changes. */
+
+.tool-call > summary {
+  position: relative;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.15s ease;
+}
+.tool-call > summary:hover {
+  transform: translateY(-0.5px);
+  box-shadow: 0 1px 0 rgba(45, 31, 20, 0.06), 0 4px 10px -6px rgba(45, 31, 20, 0.18);
+}
+
+/* Running: low-alpha brand-tinted sweep slides L→R across summary (1.8s) */
+.tool-call:not([data-tool-error]) > summary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--accent, #5d8a54) 9%, transparent) 50%,
+    transparent 100%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-100%);
+}
+.tool-call:has(.tool-call-state.running) > summary::after {
+  opacity: 1;
+  animation: tool-summary-sweep 1.8s ease-in-out infinite;
+}
+@keyframes tool-summary-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Finish moment: state chip pops in with a subtle overshoot */
+.tool-call-state.done {
+  animation: tool-state-pop 220ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes tool-state-pop {
+  0%   { transform: scale(0.7); opacity: 0; }
+  60%  { transform: scale(1.08); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Failure moment: state chip shakes + summary left border flashes danger color */
+.tool-call-state.error {
+  animation: tool-state-shake 260ms ease-in-out both;
+}
+@keyframes tool-state-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  50% { transform: translateX(3px); }
+  75% { transform: translateX(-2px); }
+}
+.tool-call[data-tool-error="1"] > summary {
+  animation: tool-error-border-flash 600ms ease-out both;
+}
+@keyframes tool-error-border-flash {
+  0%, 100% { box-shadow: inset 3px 0 0 transparent; }
+  20%      { box-shadow: inset 3px 0 0 var(--danger, #c0392b); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-call > summary,
+  .tool-call:has(.tool-call-state.running) > summary::after,
+  .tool-call-state.done,
+  .tool-call-state.error,
+  .tool-call[data-tool-error="1"] > summary {
+    animation: none !important;
+    transition: none !important;
+  }
+  .tool-call:has(.tool-call-state.running) > summary::after { opacity: 0; }
+}
