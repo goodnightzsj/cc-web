@@ -1526,6 +1526,25 @@
     if (ws && ws.readyState === 1) ws.send(JSON.stringify(data));
   }
 
+  // Login auth send: must succeed even if ws is still CONNECTING.
+  // Polls readyState every 80ms (max 5s); triggers connect() if ws is closed.
+  // Safer than send() because it actually waits for the ws.open instead of
+  // dropping the auth payload silently.
+  function sendAuthWhenReady(data, maxWaitMs = 5000) {
+    if (ws && ws.readyState === 1) { ws.send(JSON.stringify(data)); return; }
+    if (!ws || ws.readyState > 1) connect();
+    const start = Date.now();
+    const tryFlush = () => {
+      if (ws && ws.readyState === 1) {
+        try { ws.send(JSON.stringify(data)); } catch {}
+        return;
+      }
+      if (Date.now() - start > maxWaitMs) return; // outer 10s timeout will catch it
+      setTimeout(tryFlush, 80);
+    };
+    tryFlush();
+  }
+
   function scheduleReconnect() {
     if (reconnectTimer) return;
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
@@ -3740,15 +3759,19 @@
       localStorage.removeItem('cc-web-pw');
     }
     setLoginLoading(true);
-    // Safety net: if no auth_result within 8s (network dead), stop spinner
+    // Safety net: if no auth_result within 10s (network dead), stop spinner
     setTimeout(() => {
       if (loginInFlight) {
         setLoginLoading(false);
         loginError.textContent = '连接超时，请检查网络后重试。';
         loginError.hidden = false;
       }
-    }, 8000);
-    send({ type: 'auth', password: pw });
+    }, 10000);
+    // BEAUTY-1 hotfix: page-load → user-types-fast → ws still CONNECTING.
+    // send() silently drops if readyState !== 1, leaving login spinner stuck
+    // until the 10s timeout. Wait for ws.open (or trigger reconnect) before
+    // sending the auth payload.
+    sendAuthWhenReady({ type: 'auth', password: pw });
     // Request notification permission on first user interaction
     requestNotificationPermission();
   });
