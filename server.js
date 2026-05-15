@@ -2887,21 +2887,28 @@ function handleLoadSession(ws, sessionId) {
       saveSession(session);
     }
   }
-  // R34: synthesize a one-line init banner for historical sessions that pre-date
-  // R33 (system_message persistence). Without this, conversations created before
-  // 8aa4225 carry no model / cwd / mode context in their messages array — the
-  // sidebar can show the conversation but the chat area lacks the 'Claude Code
-  // 已就绪 · model' banner that the live conversation has. We synthesize, not
-  // backfill, so the session file stays untouched.
+  // R34/R35: synthesize the init banner for historical sessions that pre-date
+  // R33 (system_message persistence). Format matches the live CLI 'init' event
+  // line-for-line so users can't tell them apart:
+  //   '<agent> 已就绪 · <full-model>\ncwd: <path>\n<permMode-as-CLI-reports>'
+  // Three asymmetries with live banner that we CANNOT reconstruct:
+  //   - tools count, MCP server count (require live process introspection)
+  //   - Anthropic rate-limit notice (live API response, time-sensitive)
+  // These are omitted from the synthesized banner — adding placeholder counts
+  // would mislead more than help.
   let displayMessages = Array.isArray(session.messages) ? session.messages : [];
   const hasInitBanner = displayMessages.some((m) => m?.role === 'system' && m?.kind === 'init');
   if (!hasInitBanner && displayMessages.length > 0) {
     const isCodex = getSessionAgent(session) === 'codex';
-    const modelLabel = sessionModelLabel(session);
+    // Short alias (e.g. 'opus') → resolve to the full id the CLI would report.
+    const PERM_MODE_TO_CLI = { yolo: 'bypassPermissions', plan: 'plan', default: 'default' };
+    const modelKey = session.model;
+    const fullModel = (modelKey && MODEL_MAP[modelKey]) ? MODEL_MAP[modelKey] : modelKey;
     const parts = [];
-    parts.push(`${isCodex ? 'Codex CLI' : 'Claude Code'} 已就绪${modelLabel ? ' · ' + modelLabel : ''}`);
+    parts.push(`${isCodex ? 'Codex CLI' : 'Claude Code'} 已就绪${fullModel ? ' · ' + fullModel : ''}`);
     if (session.cwd) parts.push(`cwd: ${session.cwd}`);
-    if (session.permissionMode && session.permissionMode !== 'yolo') parts.push(session.permissionMode);
+    const permLabel = PERM_MODE_TO_CLI[session.permissionMode || 'yolo'];
+    if (permLabel) parts.push(permLabel);
     displayMessages = [{
       role: 'system',
       kind: 'init',
