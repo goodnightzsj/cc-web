@@ -3206,3 +3206,74 @@ html[data-theme='coolvibe'] .settings-back:hover {
   transition: background 0.2s;
 }
 .import-item-btn:hover { background: var(--accent-hover); }
+
+/* ============ Streaming liveness signal (BEAUTY-2) ============ */
+/* Two complementary cues for in-flight assistant streaming:
+   (1) trailing caret blinks at the end of msg-text (terminal feel)
+   (2) bottom edge of the bubble has an accent sweep (linear continuous motion)
+   Either survives if the other is occluded (long fenced code, tall stderr panel).
+   Theme-tokenized; respects prefers-reduced-motion. */
+
+#streaming-msg .msg-text:not(:has(.typing-indicator))::after {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -2px;
+  background: var(--accent, #5d8a54);
+  border-radius: 1px;
+  opacity: 0.85;
+  animation: stream-caret 1.05s steps(2, end) infinite;
+  transform: translateY(1px);
+}
+@keyframes stream-caret {
+  0%, 49% { opacity: 0.85; }
+  50%, 100% { opacity: 0; }
+}
+
+#streaming-msg .msg-bubble {
+  position: relative;
+  overflow: hidden;
+}
+#streaming-msg .msg-bubble::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent, #5d8a54) 30%,
+    color-mix(in srgb, var(--accent, #5d8a54) 60%, var(--info, #6b7faa)) 50%,
+    var(--accent, #5d8a54) 70%,
+    transparent 100%
+  );
+  background-size: 220% 100%;
+  animation: stream-sweep 2.4s linear infinite;
+  opacity: 0.55;
+  pointer-events: none;
+  border-radius: 0 0 16px 16px;
+  z-index: 1;
+}
+@keyframes stream-sweep {
+  from { background-position: 100% 0; }
+  to   { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #streaming-msg .msg-text::after {
+    animation: none;
+    opacity: 0.6;
+  }
+  #streaming-msg .msg-bubble::before {
+    animation: none;
+    background: var(--accent, #5d8a54);
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 700px) {
+  #streaming-msg .msg-text::after { width: 6px; height: 0.95em; }
+  #streaming-msg .msg-bubble::before { height: 1.5px; opacity: 0.45; }
+}
