@@ -160,7 +160,7 @@
 
   function buildWelcomeMarkup(agent) {
     const label = AGENT_LABELS[agent] || AGENT_LABELS.claude;
-    return `<div class="welcome-msg"><div class="welcome-icon">✿</div><h3>欢迎使用 CC-Web</h3><p>开始与 ${label} 对话</p><div class="welcome-hint">按 <kbd>/</kbd> 查看指令 · <kbd>Enter</kbd> 发送</div></div>`;
+    return `<div class="welcome-msg"><div class="welcome-icon">✿</div><h3>欢迎使用 CC-Web</h3><p>开始与 ${label} 对话</p><div class="welcome-hint">按 <kbd>/</kbd> 查看指令 · <kbd>Enter</kbd> 发送 · <kbd>?</kbd> 快捷键</div></div>`;
   }
 
   function normalizeAgent(agent) {
@@ -754,6 +754,58 @@
   const appAlert = (msg, opts) => appModal({ type: 'alert', message: msg, ...(opts || {}) });
   const appConfirm = (msg, opts) => appModal({ type: 'confirm', message: msg, ...(opts || {}) });
   const appPrompt = (msg, def = '', opts) => appModal({ type: 'prompt', message: msg, defaultValue: def, ...(opts || {}) });
+
+  // R23: Keyboard shortcuts help dialog (WCAG 3.3.5 Help, ARIA APG dialog)
+  let kbdHelpOverlay = null;
+  function openKbdHelp() {
+    if (kbdHelpOverlay) return;
+    const previousFocus = document.activeElement;
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay app-modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-panel app-modal-panel" role="dialog" aria-modal="true" aria-labelledby="kbd-help-title">
+        <h2 id="kbd-help-title" class="kbd-help-title">键盘快捷键</h2>
+        <dl class="kbd-help-list">
+          <dt><kbd>Esc</kbd></dt>          <dd>关闭弹层 / 菜单 / 模态框</dd>
+          <dt><kbd>Enter</kbd></dt>        <dd>发送消息（输入框内）</dd>
+          <dt><kbd>Shift</kbd>+<kbd>Enter</kbd></dt><dd>换行</dd>
+          <dt><kbd>/</kbd></dt>            <dd>打开斜杠指令菜单</dd>
+          <dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>指令菜单 / 自动补全导航</dd>
+          <dt><kbd>Tab</kbd></dt>          <dd>遍历所有可交互元素 / 指令菜单选中</dd>
+          <dt><kbd>Enter</kbd> / <kbd>Space</kbd></dt><dd>激活当前会话条目</dd>
+          <dt><kbd>?</kbd></dt>            <dd>打开本帮助</dd>
+        </dl>
+        <p class="kbd-help-tip">提示：在输入框内输入 <kbd>?</kbd> 字符不会触发本帮助。</p>
+        <div class="app-modal-footer">
+          <button class="modal-btn-primary" data-act="ok">关闭</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    kbdHelpOverlay = overlay;
+    const closeBtn = overlay.querySelector('[data-act="ok"]');
+    closeBtn.focus();
+    const close = () => {
+      if (!kbdHelpOverlay) return;
+      kbdHelpOverlay.remove();
+      kbdHelpOverlay = null;
+      document.removeEventListener('keydown', onKey, true);
+      if (previousFocus && typeof previousFocus.focus === 'function') previousFocus.focus();
+    };
+    closeBtn.addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== '?') return;
+    const ae = document.activeElement;
+    if (!ae) return;
+    const tag = ae.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || ae.isContentEditable) return;
+    e.preventDefault();
+    openKbdHelp();
+  });
 
   function cloneMessages(messages) {
     return Array.isArray(messages) ? deepClone(messages) : [];
