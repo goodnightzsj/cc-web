@@ -98,6 +98,15 @@
               0 32px 64px -16px rgba(var(--shadow-tint), 0.22);
   --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   --shadow-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* === Message bubble hierarchy (REDESIGN-4 V6) ===
+     3-tier visual weight matching information importance:
+     user (primary, raised) > assistant (response surface) > system (ambient log) */
+  --bubble-pad-user:    10px 14px;
+  --bubble-pad-asst:    14px 18px;
+  --bubble-pad-sys:     6px 14px;
+  --bubble-radius-user: 18px;
+  --bubble-radius-asst: 14px;
 }
 
 html[data-theme='coolvibe'] {
@@ -1231,7 +1240,11 @@ body.session-loading-active {
 .msg.user .msg-bubble {
   background: var(--bg-bubble-user);
   color: #fff;
+  border-radius: var(--bubble-radius-user);
   border-bottom-right-radius: 4px;
+  padding: var(--bubble-pad-user);
+  font: var(--fw-medium) var(--fs-md)/var(--lh-snug) var(--font-ui);
+  box-shadow: var(--shadow-2);
 }
 .msg.user .msg-attachment-label {
   background: rgba(255, 255, 255, 0.16);
@@ -1240,25 +1253,31 @@ body.session-loading-active {
 .msg.assistant .msg-bubble {
   background: var(--bg-bubble-assistant);
   border: 1px solid var(--border-color);
+  border-radius: var(--bubble-radius-asst);
   border-bottom-left-radius: 4px;
   color: var(--text-primary);
+  padding: var(--bubble-pad-asst);
+  font: var(--fw-normal) var(--fs-base)/var(--lh-relaxed) var(--font-ui);
   box-shadow: var(--shadow-1);
 }
 
-/* System messages */
+/* System messages — ambient log style (no fill, left rule, muted) */
 .msg.system {
-  align-self: center;
-  max-width: 90%;
+  align-self: stretch;
+  max-width: 100%;
+  margin-left: 56px; /* align with assistant text column past the avatar */
 }
 .msg.system .msg-bubble {
-  background: var(--bg-tertiary);
-  border: 1px dashed var(--border-color);
-  border-radius: 10px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  padding: 10px 16px;
-  text-align: center;
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--border-color);
+  border-radius: 0 8px 8px 0;
+  color: var(--text-muted);
+  font: var(--fw-normal) var(--fs-sm)/var(--lh-snug) var(--font-ui);
+  padding: var(--bubble-pad-sys);
+  text-align: left;
   white-space: pre-line;
+  opacity: 0.92;
 }
 
 /* Markdown content */
@@ -1499,9 +1518,9 @@ body.session-loading-active {
 .msg.system[data-kind] .msg-bubble {
   white-space: pre-wrap;
   font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
-  font-size: 12px;
-  line-height: 1.55;
-  padding: 8px 12px;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  padding: var(--bubble-pad-sys);
 }
 .msg.system[data-kind="init"] .msg-bubble {
   border-left: 3px solid var(--accent, #5d8a54);
