@@ -4234,7 +4234,7 @@
       <div class="settings-section-title">通知摘要</div>
       <div class="settings-field" style="flex-direction:row;align-items:center;gap:10px">
         <label style="margin:0;flex:1">启用 AI 摘要</label>
-        <input type="checkbox" id="notify-summary-enabled" ${enabled ? 'checked' : ''} style="width:auto;margin:0">
+        <input type="checkbox" id="notify-summary-enabled" ${enabled ? 'checked' : ''}>
       </div>
       <div id="notify-summary-options" style="${enabled ? '' : 'display:none'}">
         <div class="settings-field">
@@ -5522,7 +5522,7 @@
         <div style="display:flex;flex-direction:column;gap:6px">
           ${sshHosts.map((host) => `
             <div style="display:flex;gap:8px;align-items:center;padding:8px;border:1px solid var(--border);border-radius:6px;cursor:pointer;${selectedHostId === host.id ? 'border-color:var(--accent);background:var(--accent-dim,rgba(100,150,255,0.08))' : ''}" data-host-select="${host.id}">
-              <input type="radio" name="ns-ssh-host" value="${escapeHtml(host.id)}" ${selectedHostId === host.id ? 'checked' : ''} style="margin:0">
+              <input type="radio" name="ns-ssh-host" value="${escapeHtml(host.id)}" ${selectedHostId === host.id ? 'checked' : ''}>
               <div style="flex:1">
                 <div style="font-weight:600">${escapeHtml(host.name || '未命名')}</div>
                 <div style="font-size:0.85em;color:var(--text-secondary)">${escapeHtml(host.user || '')}@${escapeHtml(host.host || '')}:${host.port || 22}${host.description ? ' · ' + escapeHtml(host.description) : ''}</div>
