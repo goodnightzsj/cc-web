@@ -168,10 +168,26 @@
     });
   }
 
+  // hljs stylesheet name for each site theme; defaults to atom-one-light.
+  // (Map only needs an entry for themes that should use a different stylesheet.)
+  const HLJS_THEME_FOR_SITE = {
+    washi: 'atom-one-light',
+    coolvibe: 'atom-one-light',
+    editorial: 'atom-one-light',
+  };
+  function applyHighlightTheme(siteTheme) {
+    const link = document.getElementById('hljs-theme-link');
+    if (!link) return;
+    const want = HLJS_THEME_FOR_SITE[siteTheme] || 'atom-one-light';
+    const url = `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/${want}.min.css`;
+    if (link.href !== url) link.href = url;
+  }
+
   function applyTheme(theme) {
     currentTheme = normalizeTheme(theme);
     document.documentElement.dataset.theme = currentTheme;
     localStorage.setItem('cc-web-theme', currentTheme);
+    applyHighlightTheme(currentTheme);
     refreshThemeSummaries();
   }
 
@@ -2830,6 +2846,43 @@
     messagesDiv.appendChild(el);
     scrollToBottom();
   }
+
+  // --- Image lightbox (C): click any tool-result image → fullscreen overlay ---
+  let _lightboxEl = null;
+  function openLightbox(src) {
+    closeLightbox();
+    const overlay = document.createElement('div');
+    overlay.className = 'image-lightbox';
+    overlay.tabIndex = -1;
+    overlay.innerHTML = `
+      <img class="image-lightbox-img" src="${src.replace(/"/g, '&quot;')}" alt="">
+      <button type="button" class="image-lightbox-close" aria-label="关闭">×</button>
+    `;
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay || e.target.classList.contains('image-lightbox-close')) closeLightbox();
+    });
+    let scale = 1;
+    overlay.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      scale = Math.max(0.2, Math.min(8, scale * (e.deltaY < 0 ? 1.15 : 0.87)));
+      const img = overlay.querySelector('.image-lightbox-img');
+      if (img) img.style.transform = `scale(${scale})`;
+    }, { passive: false });
+    document.body.appendChild(overlay);
+    _lightboxEl = overlay;
+    overlay.focus();
+  }
+  function closeLightbox() {
+    if (_lightboxEl) { _lightboxEl.remove(); _lightboxEl = null; }
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && _lightboxEl) closeLightbox();
+  });
+  // Event delegation on messages container
+  document.addEventListener('click', (e) => {
+    const img = e.target.closest && e.target.closest('.tool-result-image');
+    if (img && img.src) openLightbox(img.src);
+  });
 
   // Stream stderr chunks from the CLI subprocess into a single collapsible block.
   // Multiple chunks within ~1s coalesce so high-frequency warnings don't spam.
