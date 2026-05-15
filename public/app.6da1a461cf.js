@@ -2142,12 +2142,16 @@
           tc.resultTotalLength = msg.resultTotalLength;
           tc.isError = !!msg.isError;
           if (Array.isArray(msg.images) && msg.images.length) tc.images = msg.images;
+          // R52: capture R51 toolUseResult enrichment so updateToolCall can
+          // render stdout/stderr/exitCode/interrupted/isImage panels.
+          if (msg.toolUseResult) tc.toolUseResult = msg.toolUseResult;
         }
         updateToolCall(msg.toolUseId, msg.result, {
           truncated: !!msg.resultTruncated,
           totalLength: msg.resultTotalLength,
           isError: !!msg.isError,
           images: Array.isArray(msg.images) ? msg.images : null,
+          toolUseResult: msg.toolUseResult || null,
         });
         break;
 
@@ -2248,17 +2252,25 @@
         flushRender();
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           for (const tc of msg.toolCalls) {
-            activeToolCalls.set(tc.id, {
-              name: tc.name,
-              input: tc.input,
-              result: tc.result,
-              kind: tc.kind || null,
-              meta: tc.meta || null,
-              done: tc.done,
-            });
+            // R52: preserve full tc shape (including toolUseResult, images,
+            // truncation flags, elapsedMs, startedAt) so the resumed bubble
+            // matches what the historical-render path would produce.
+            activeToolCalls.set(tc.id, { ...tc });
             appendToolCall(tc.id, tc.name, tc.input, tc.done, tc.kind || null, tc.meta || null);
-            if (tc.done && tc.result) {
-              updateToolCall(tc.id, tc.result);
+            if (tc.done) {
+              updateToolCall(tc.id, tc.result, {
+                truncated: !!tc.resultTruncated,
+                totalLength: tc.resultTotalLength,
+                isError: !!tc.isError,
+                images: Array.isArray(tc.images) ? tc.images : null,
+                toolUseResult: tc.toolUseResult || null,
+              });
+              // R47/R52: hydrate elapsed timer dataset for the resumed chip
+              const tEl = document.getElementById('tool-' + tc.id);
+              if (tEl) {
+                if (tc.elapsedMs != null) tEl.dataset.elapsedMs = String(tc.elapsedMs);
+                if (tc.startedAt && !tEl.dataset.startedAt) tEl.dataset.startedAt = String(tc.startedAt);
+              }
             }
           }
         }
@@ -3187,6 +3199,39 @@
 
   function appendToolDecorations(contentEl, tool) {
     if (!contentEl || !tool) return contentEl;
+    // R52: surface CLI's toolUseResult enrichment (stdout/stderr/exitCode/
+    // interrupted/isImage). For Bash specifically, stdout/stderr are the
+    // canonical outputs; exitCode != 0 ⇒ failed; interrupted = user/timeout.
+    const tur = tool.toolUseResult;
+    if (tur && typeof tur === 'object') {
+      if (typeof tur.exitCode === 'number') {
+        const exitChip = document.createElement('div');
+        exitChip.className = 'tool-result-exit';
+        exitChip.dataset.ok = tur.exitCode === 0 ? '1' : '0';
+        exitChip.textContent = tur.exitCode === 0 ? `✓ exit 0` : `✗ exit ${tur.exitCode}`;
+        contentEl.appendChild(exitChip);
+      }
+      if (tur.interrupted) {
+        const intChip = document.createElement('div');
+        intChip.className = 'tool-result-exit';
+        intChip.dataset.ok = '0';
+        intChip.textContent = '⏹ 已中断';
+        contentEl.appendChild(intChip);
+      }
+      if (typeof tur.stderr === 'string' && tur.stderr.trim()) {
+        const sec = document.createElement('div');
+        sec.className = 'tool-result-stderr';
+        const label = document.createElement('div');
+        label.className = 'tool-result-stderr-label';
+        label.textContent = 'stderr';
+        const body = document.createElement('pre');
+        body.className = 'tool-result-stderr-body';
+        body.textContent = tur.stderr;
+        sec.appendChild(label);
+        sec.appendChild(body);
+        contentEl.appendChild(sec);
+      }
+    }
     // Inline images returned by tools (Claude tool_result content type:image)
     if (Array.isArray(tool.images) && tool.images.length) {
       const gallery = document.createElement('div');
@@ -3449,6 +3494,8 @@
       if (extras.totalLength !== undefined) tool.resultTotalLength = extras.totalLength;
       if (extras.isError !== undefined) tool.isError = extras.isError;
       if (extras.images) tool.images = extras.images;
+      // R52: surface CLI's toolUseResult enrichment (stdout/stderr/exitCode/...)
+      if (extras.toolUseResult) tool.toolUseResult = extras.toolUseResult;
     }
     if (tool.isError) el.dataset.toolError = '1'; else delete el.dataset.toolError;
     const summary = el.querySelector('summary');

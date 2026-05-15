@@ -4905,3 +4905,49 @@ input[type="radio"]:focus-visible {
   color: var(--accent);
   vertical-align: 1px;
 }
+
+/* ============ R52 — toolUseResult enrichment surfaces (exit code + stderr) ============ */
+.tool-result-exit {
+  display: inline-block;
+  margin: var(--space-2) var(--space-3) var(--space-2) 0;
+  padding: 2px var(--space-3);
+  border-radius: var(--radius-sm);
+  font: var(--fw-semibold) var(--fs-xs)/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+.tool-result-exit[data-ok="1"] {
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+  color: var(--success);
+  border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+}
+.tool-result-exit[data-ok="0"] {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
+}
+.tool-result-stderr {
+  margin-top: var(--space-3);
+  border-left: 3px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+}
+.tool-result-stderr-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-widest);
+  text-transform: uppercase;
+  color: var(--danger);
+  margin-bottom: var(--space-2);
+}
+.tool-result-stderr-body {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
