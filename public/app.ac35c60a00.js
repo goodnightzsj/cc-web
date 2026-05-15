@@ -1426,6 +1426,12 @@
     updateCwdBadge();
     messagesDiv.innerHTML = buildWelcomeMarkup(currentAgent);
     setStatsDisplay(null);
+    // R48: clear ctx-meter state on view reset so stale per-turn data from a
+    // previous session doesn't bleed into the new one (R47 introduced
+    // hydration but never cleared it).
+    lastUsageDetail = null;
+    if (ctxMeter) { ctxMeter.hidden = true; delete ctxMeter.dataset.level; ctxMeter.style.removeProperty('--ctx-pct'); }
+    if (ctxPopover) ctxPopover.hidden = true;
     renderPendingAttachments();
     highlightActiveSession();
   }
@@ -1629,6 +1635,23 @@
   }
   // R40: Context Window Meter
   let lastUsageDetail = null;
+  // R48: walk messages array from newest backward to find the latest
+  // assistant turn that carried usageDetail. Hydrating only this one prevents
+  // older-batch renders from overwriting the meter with stale data.
+  function hydrateLatestUsageDetail(messages) {
+    if (!Array.isArray(messages)) return;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m?.role === 'assistant' && m.usageDetail) {
+        lastUsageDetail = m.usageDetail;
+        renderCtxMeter(m.usageDetail);
+        return;
+      }
+    }
+    // No persisted usageDetail in this session — clear meter to avoid bleed.
+    lastUsageDetail = null;
+    if (ctxMeter) { ctxMeter.hidden = true; delete ctxMeter.dataset.level; ctxMeter.style.removeProperty('--ctx-pct'); }
+  }
   function renderCtxMeter(detail) {
     if (!ctxMeter || !detail) return;
     const cw = detail.contextWindow;
@@ -2660,11 +2683,12 @@
 	    if (m.role === 'assistant' && m.stopReason) {
 	      setTimeout(() => appendStopReasonChip(el, m.stopReason), 0);
 	    }
-	    // R47: hydrate per-turn usageDetail so ctx-meter + popover reflect
-	    // the saved turn (otherwise reloads keep showing the last-live data).
+	    // R47 + R48 fix: stash usageDetail on the element so renderMessages can
+	    // pick the FINAL assistant's data to hydrate ctx-meter (avoids the
+	    // batched-render bug where later batches contained older assistants and
+	    // overwrote lastUsageDetail with stale data).
 	    if (m.role === 'assistant' && m.usageDetail) {
-	      lastUsageDetail = m.usageDetail;
-	      renderCtxMeter(m.usageDetail);
+	      try { el.dataset.usageDetail = JSON.stringify(m.usageDetail); } catch {}
 	    }
 	    // R47: tool elapsed time was server-side stamped (R45 lived only on
 	    // client Date.now()). Replay frozen elapsedMs onto the chip dataset so
@@ -2755,6 +2779,7 @@
       messages.forEach((message) => frag.appendChild(buildMsgElement(message)));
       messagesDiv.appendChild(frag);
       scrollToBottom(true);
+      hydrateLatestUsageDetail(messages);
       return;
     }
     // Batch render: last 10 first, then next 20, then the rest
@@ -2776,6 +2801,10 @@
     for (let i = batches[0][0]; i < batches[0][1]; i++) frag0.appendChild(buildMsgElement(messages[i]));
     messagesDiv.appendChild(frag0);
     scrollToBottom(true);
+    // R48: hydrate ctx-meter from the LATEST assistant's usageDetail (in the
+    // first/newest batch). Subsequent batches contain older messages which
+    // intentionally do NOT touch ctx-meter — fixes R47's stale-overwrite bug.
+    hydrateLatestUsageDetail(messages);
 
     // Render remaining batches asynchronously, prepending each
     // Use scrollHeight delta to keep current view position stable after prepend
