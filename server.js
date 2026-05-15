@@ -1474,7 +1474,14 @@ function condenseRuntimeError(raw) {
 
 function formatRuntimeError(agent, raw, context = {}) {
   const condensed = condenseRuntimeError(raw);
-  const exitInfo = typeof context.exitCode === 'number' ? `（退出码 ${context.exitCode}）` : '';
+  const sig = context.signal && context.signal !== 'SIGTERM' ? context.signal : null;
+  // Compose terminal info: prefer signal name when present, else exit code.
+  let exitInfo = '';
+  if (sig) {
+    exitInfo = `（信号 ${sig}${sig === 'SIGKILL' && context.exitCode == null ? ' · 可能被系统 OOM-killer 终止，请检查内存' : ''}）`;
+  } else if (typeof context.exitCode === 'number') {
+    exitInfo = `（退出码 ${context.exitCode}）`;
+  }
   if (!condensed) {
     return agent === 'codex'
       ? `Codex 任务异常结束${exitInfo}，但 CLI 没有返回更多错误信息。`
@@ -3068,8 +3075,22 @@ function handleAbort(ws) {
   if (!entry) return;
 
   plog('INFO', 'user_abort', { sessionId: sessionId.slice(0, 8), pid: entry.pid });
+  // Immediate user feedback so the abort click feels responsive
+  // (between SIGTERM and process_complete there's a 0.3-3s gap)
+  const tgterm = { type: 'system_message', message: '已发送终止信号，等待 CLI 退出…', kind: 'abort' };
+  bufferReplayable(entry, tgterm);
+  if (entry.ws) wsSend(entry.ws, tgterm);
   killProcess(entry.pid);
   setTimeout(() => {
+    // If the process is still around after 3s, escalate to SIGKILL and tell the user
+    if (activeProcesses.has(sessionId)) {
+      const stillEntry = activeProcesses.get(sessionId);
+      const escalate = { type: 'system_message', message: 'CLI 未在 3 秒内响应 SIGTERM，已发送 SIGKILL。', kind: 'abort' };
+      if (stillEntry) {
+        bufferReplayable(stillEntry, escalate);
+        if (stillEntry.ws) wsSend(stillEntry.ws, escalate);
+      }
+    }
     killProcess(entry.pid, true);
   }, 3000);
   // handleProcessComplete will be triggered by the PID monitor
@@ -3275,15 +3296,19 @@ function handleMessage(ws, msg, options = {}) {
       wsSend(currentWs, payload, true);
       if (pendingStderr) stderrFlushTimer = setTimeout(flushStderr, STDERR_FLUSH_MS);
     };
+    // Strip ANSI CSI (colors, cursor moves, screen clears) + OSC sequences.
+    // Keeps the stderr panel clean for TUI-style CLIs (Codex --tui, etc).
+    const ANSI_STRIP = /\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[=>]/g;
     proc.stderr.on('data', (buf) => {
       const s = buf.toString('utf8');
-      // 过滤噪声行：纯空白 / Reconnecting... / 单独 ANSI 控制
-      const cleaned = s.split('\n').filter((line) => {
-        const t = line.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, '').trim();
-        if (!t) return false;
-        if (/^Reconnecting\.\.\./i.test(t)) return false;
-        return true;
-      }).join('\n');
+      // Split + per-line: drop noise (blank / Reconnecting…), then truly strip ANSI on kept lines
+      const cleaned = s.split('\n').map((line) => {
+        const stripped = line.replace(ANSI_STRIP, '');
+        const t = stripped.trim();
+        if (!t) return null;
+        if (/^Reconnecting\.\.\./i.test(t)) return null;
+        return stripped;
+      }).filter((l) => l !== null).join('\n');
       if (!cleaned) return;
       pendingStderr += cleaned;
       if (!pendingStderr.endsWith('\n')) pendingStderr += '\n';
