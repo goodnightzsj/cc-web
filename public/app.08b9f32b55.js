@@ -99,6 +99,7 @@
   let currentSessionRunning = false;
   let skipDeleteConfirm = localStorage.getItem('cc-web-skip-delete-confirm') === '1';
   let pendingInitialSessionLoad = false;
+  let sessionListSafetyTimer = null;
 
   // --- DOM ---
   const $ = (sel) => document.querySelector(sel);
@@ -1853,6 +1854,20 @@
             showForceChangePassword();
           } else {
             pendingInitialSessionLoad = true;
+            // Defensive: explicitly request session list. Server already auto-pushes
+            // it after auth_result, but the second list_sessions is idempotent and
+            // covers any race where the auto-pushed frame is dropped or the
+            // client's onmessage isn't yet bound when it arrives.
+            send({ type: 'list_sessions' });
+            // Safety net: if no session_list arrives within 2s (e.g. both push
+            // and request lost), retry once. Cleared inside case 'session_list'.
+            if (sessionListSafetyTimer) clearTimeout(sessionListSafetyTimer);
+            sessionListSafetyTimer = setTimeout(() => {
+              sessionListSafetyTimer = null;
+              if (pendingInitialSessionLoad && ws && ws.readyState === 1) {
+                send({ type: 'list_sessions' });
+              }
+            }, 2000);
           }
         } else {
           authToken = null;
@@ -1873,6 +1888,7 @@
         break;
 
       case 'session_list':
+        if (sessionListSafetyTimer) { clearTimeout(sessionListSafetyTimer); sessionListSafetyTimer = null; }
         sessions = msg.sessions || [];
         reconcileSessionCacheWithSessions();
         renderSessionList();
