@@ -2896,29 +2896,58 @@ function handleLoadSession(ws, sessionId) {
   //   - Anthropic rate-limit notice (live API response, time-sensitive)
   // These are omitted from the synthesized banner — adding placeholder counts
   // would mislead more than help.
-  // R38: per-user-turn init banner synthesis.
+  // R39: render-order alignment with live timeline + last-turn-only synthesis.
   //
-  // Live timeline: every user message triggers a fresh CLI spawn (Claude is
-  // stateless per call, --resume is used to continue context), which emits its
-  // own init event. So a long live conversation has the shape:
-  //   [user, init, assistant, user, init, assistant, ...]
+  // Live DOM order discovered via Playwright:
+  //   user → assistant (streaming-msg created on sendMessage)
+  //        → init / rate-limit (system_messages append AFTER assistant bubble
+  //          because startGenerating creates the assistant placeholder
+  //          synchronously, well before server sends the first frame)
   //
-  // Historical sessions (pre-R33) have NO init events stored. R34's earlier
-  // approach (one global synthesis when no init exists) had two flaws:
-  //   1. positioning: it prepended before the first user, but live order puts
-  //      init AFTER the user that spawned it. (fixed in R37)
-  //   2. mixed-era sessions: if a pre-R33 session got a new message after
-  //      R33 went live, the new turn's real init flipped hasInitBanner to true
-  //      and suppressed synthesis for ALL prior user turns. Old user bubbles
-  //      lost their banners.
+  // session.messages STORAGE order (per wsSendR push timing):
+  //   user → init → rate-limit → assistant (assistant push waits for done)
   //
-  // Fix: walk the messages array, and for every user turn that's followed
-  // directly by an assistant reply but has NO init in between, splice in a
-  // synthesized init. This produces per-turn banners matching live shape,
-  // and naturally co-exists with real R33+ persisted init banners.
+  // Two-step fix:
+  //
+  // Step A — reorder each turn into live shape:
+  //   walk turns demarcated by user messages. Within each turn, output
+  //   user, then assistants (preserving relative order), then everything
+  //   else (system messages, etc.) in original order. This puts every
+  //   system_message AFTER its turn's assistant — matching the live DOM.
+  //
+  // Step B — synthesize banner only for the LATEST turn:
+  //   user said: 'when I send a new message on a historical session, the
+  //   synthesized banner should NOT show for old turns; only the newest
+  //   reply gets a banner under it.' So we synthesize at most one init
+  //   message, placed after the last assistant — and only when the last
+  //   turn doesn't already carry a real R33+ init.
   const rawMessages = Array.isArray(session.messages) ? session.messages : [];
   let displayMessages = rawMessages;
   if (rawMessages.length > 0) {
+    // Step A: reorder per turn → user, assistants, then systems.
+    const reordered = [];
+    let i = 0;
+    while (i < rawMessages.length) {
+      const m = rawMessages[i];
+      if (m?.role !== 'user') {
+        reordered.push(m);
+        i++;
+        continue;
+      }
+      reordered.push(m); // user
+      i++;
+      const turn = [];
+      while (i < rawMessages.length && rawMessages[i]?.role !== 'user') {
+        turn.push(rawMessages[i]);
+        i++;
+      }
+      const assistants = turn.filter((t) => t.role === 'assistant');
+      const systems = turn.filter((t) => t.role === 'system');
+      const others = turn.filter((t) => t.role !== 'assistant' && t.role !== 'system');
+      reordered.push(...assistants, ...others, ...systems);
+    }
+
+    // Step B: synthesize one init banner for the last turn iff it lacks one.
     const isCodex = getSessionAgent(session) === 'codex';
     const PERM_MODE_TO_CLI = { yolo: 'bypassPermissions', plan: 'plan', default: 'default' };
     const modelKey = session.model;
@@ -2929,31 +2958,31 @@ function handleLoadSession(ws, sessionId) {
     const permLabel = PERM_MODE_TO_CLI[session.permissionMode || 'yolo'];
     if (permLabel) parts.push(permLabel);
     const synthInitContent = parts.join('\n');
-    const processed = [];
-    let needsAny = false;
-    for (let i = 0; i < rawMessages.length; i++) {
-      const m = rawMessages[i];
-      processed.push(m);
-      if (m?.role === 'user') {
-        const next = rawMessages[i + 1];
-        // Skip when this user turn already has its real init banner.
-        if (next?.role === 'system' && next?.kind === 'init') continue;
-        // Synthesize only for completed turns (next is assistant). Skip if
-        // user is the last message or followed by another user, since those
-        // represent in-flight or aborted turns where no CLI cycle happened.
-        if (next?.role === 'assistant') {
-          processed.push({
-            role: 'system',
-            kind: 'init',
-            content: synthInitContent,
-            ts: m.ts || session.created || session.updated || null,
-            synthetic: true,
-          });
-          needsAny = true;
-        }
+
+    // Locate the last turn: from last user message to end.
+    let lastUserIdx = -1;
+    for (let j = reordered.length - 1; j >= 0; j--) {
+      if (reordered[j]?.role === 'user') { lastUserIdx = j; break; }
+    }
+    if (lastUserIdx !== -1) {
+      const lastTurn = reordered.slice(lastUserIdx);
+      const hasInit = lastTurn.some((t) => t.role === 'system' && t.kind === 'init');
+      let lastAssistantOffset = -1;
+      for (let j = lastTurn.length - 1; j >= 0; j--) {
+        if (lastTurn[j]?.role === 'assistant') { lastAssistantOffset = j; break; }
+      }
+      if (!hasInit && lastAssistantOffset !== -1) {
+        const insertAt = lastUserIdx + lastAssistantOffset + 1;
+        reordered.splice(insertAt, 0, {
+          role: 'system',
+          kind: 'init',
+          content: synthInitContent,
+          ts: session.updated || session.created || null,
+          synthetic: true,
+        });
       }
     }
-    if (needsAny) displayMessages = processed;
+    displayMessages = reordered;
   }
   const { recentMessages, olderChunks } = splitHistoryMessages(displayMessages);
   const effectiveCwd = session.cwd || activeProcesses.get(sessionId)?.cwd || null;
