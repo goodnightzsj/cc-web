@@ -2151,7 +2151,8 @@
         if (msg.kind === 'init' && msg.initDetail) {
           appendInitCard(msg.message, msg.initDetail);
         } else {
-          appendSystemMessage(msg.message, msg.kind || null);
+          // R42: errorClass passed through to dataset for typed visual variant.
+          appendSystemMessage(msg.message, msg.kind || null, msg.errorClass || null);
         }
         break;
 
@@ -2582,6 +2583,8 @@
 	    // CSS variants apply identically on historical bubbles as on live ones.
 	    if (m.role === 'system' && m.kind) {
 	      el.dataset.kind = m.kind;
+	      // R42: historical error bubbles also pick up errorClass for typed styling.
+	      if (m.errorClass) el.dataset.errorClass = m.errorClass;
 	    }
 	    if (m.role === 'assistant' && m.aborted) {
 	      el.dataset.aborted = '1';
@@ -3417,11 +3420,13 @@
     });
   }
 
-  function appendSystemMessage(message, kind) {
+  function appendSystemMessage(message, kind, errorClass) {
     const welcome = messagesDiv.querySelector('.welcome-msg');
     if (welcome) welcome.remove();
     const el = createMsgElement('system', message);
     if (kind) el.dataset.kind = kind;
+    // R42: error-class drives 5-tier color/icon variants on .msg.system[data-kind="error"]
+    if (errorClass) el.dataset.errorClass = errorClass;
     messagesDiv.appendChild(el);
     scrollToBottom();
   }

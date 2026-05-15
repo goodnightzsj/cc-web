@@ -4574,3 +4574,62 @@ input[type="radio"]:focus-visible {
 @media (max-width: 480px) {
   .init-card-mcp-error { max-width: 38%; }
 }
+
+/* ============ R42 — Typed Error Bubbles (5-tier classification) ============ */
+/* Base error bubble already exists at .msg.system[data-kind="error"] (R36).
+ * data-error-class adds a left rail color + icon prefix matching the class. */
+.msg.system[data-kind="error"][data-error-class] .msg-bubble {
+  position: relative;
+  padding-left: var(--space-7);
+  border-left-width: 3px;
+  border-left-style: solid;
+}
+.msg.system[data-kind="error"][data-error-class] .msg-bubble::before {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  font-size: var(--fs-md);
+  line-height: 1;
+}
+/* auth - red */
+.msg.system[data-kind="error"][data-error-class="auth"] .msg-bubble {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="auth"] .msg-bubble::before { content: '🔐'; }
+/* rate-limit - amber */
+.msg.system[data-kind="error"][data-error-class="rate-limit"] .msg-bubble {
+  border-left-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="rate-limit"] .msg-bubble::before { content: '⏳'; }
+/* overload - purple-ish (use --hook accent) */
+.msg.system[data-kind="error"][data-error-class="overload"] .msg-bubble {
+  border-left-color: var(--hook);
+  background: color-mix(in srgb, var(--hook) 8%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="overload"] .msg-bubble::before { content: '🌊'; }
+/* context-overflow - amber-deep */
+.msg.system[data-kind="error"][data-error-class="context-overflow"] .msg-bubble {
+  border-left-color: var(--warning-hover);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="context-overflow"] .msg-bubble::before { content: '📚'; }
+/* bad-request - blue-grey */
+.msg.system[data-kind="error"][data-error-class="bad-request"] .msg-bubble {
+  border-left-color: var(--info);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="bad-request"] .msg-bubble::before { content: '✖'; }
+/* network - neutral grey */
+.msg.system[data-kind="error"][data-error-class="network"] .msg-bubble {
+  border-left-color: var(--neutral-500);
+  background: color-mix(in srgb, var(--neutral-500) 8%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="network"] .msg-bubble::before { content: '🌐'; }
+/* unknown - default danger but muted */
+.msg.system[data-kind="error"][data-error-class="unknown"] .msg-bubble {
+  border-left-color: var(--text-muted);
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+}
+.msg.system[data-kind="error"][data-error-class="unknown"] .msg-bubble::before { content: '⚠'; }
