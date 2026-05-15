@@ -3673,6 +3673,70 @@ html[data-theme='coolvibe'] .settings-back:hover {
   .tool-call:has(.tool-call-state.running) > summary::after { opacity: 0; }
 }
 
+/* ============ Tool sub-card hierarchy (REDESIGN-5 V7) ============ */
+/* Same hierarchy thinking as R4 message tiers, applied to sub-cards inside
+   tool-call. 3 tiers by user-consumption frequency × signal weight:
+     Tier 1 PRIMARY:   diff / todo  — the deliverables (visible heavy)
+     Tier 2 SECONDARY: thinking      — supplementary, narrower, dimmer
+     Tier 3 ALERT:     stderr        — promoted to warning banner */
+
+/* === Tier 1: deliverables === */
+.tool-call-content.todo-list {
+  padding: 14px 16px;
+  gap: 12px;
+}
+.todo-item {
+  font-size: var(--fs-md);
+  line-height: var(--lh-snug);
+}
+.tool-diff {
+  gap: 14px;
+  margin-top: 10px;
+}
+.diff-pane {
+  font-size: 12.5px;
+  box-shadow: var(--shadow-1);
+}
+.tool-diff-label {
+  font-size: 10.5px;
+  color: var(--text-primary);
+  opacity: 0.7;
+}
+
+/* === Tier 2: thinking — supplementary, narrower === */
+.msg-thinking {
+  margin: 0 12px 8px 12px;       /* indent 12px = visually subordinate */
+  font-size: var(--fs-sm);
+  border-left-width: 2px;         /* thinner rail than tier-1 */
+  opacity: 0.92;
+}
+.msg-thinking-summary {
+  padding: 4px 10px;
+  font-size: var(--fs-xs);
+}
+.msg-thinking-body {
+  padding: 0 10px 8px 20px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* === Tier 3: stderr — promoted to alert banner === */
+.msg-stderr {
+  margin: 12px 0;                 /* full bleed (no horizontal indent) */
+  border-left-width: 4px;          /* heaviest rail */
+  border-radius: 6px;              /* tighter, more 'alert' feel */
+  background: color-mix(in srgb, #d4a33a 12%, transparent);
+  box-shadow: var(--shadow-2);
+}
+.msg-stderr-summary {
+  font-size: 12.5px;
+  font-weight: var(--fw-bold);
+  padding: 8px 14px;
+}
+
+/* Group sibling sub-cards in a single tool-call */
+.tool-call-content { isolation: isolate; }
+
 /* ============ App Modal API (REDESIGN-1) ============ */
 /* Replaces native alert/confirm/prompt — themes inherit through .modal-*
    classes. Layered above settings-overlay via z-index 1200. */
