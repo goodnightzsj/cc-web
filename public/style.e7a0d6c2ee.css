@@ -3355,3 +3355,83 @@ html[data-theme='coolvibe'] .settings-back:hover {
   .session-item:has(.session-item-status)::after { animation: none; opacity: 0.5; }
   .session-item-actions { transition: none; }
 }
+
+/* ============ Welcome empty state — living focal point (BEAUTY-4) ============ */
+/* Currently a flat icon + 2 lines of text. R1/R2/R3 added motion to login,
+   streaming bubble, sidebar — but the main stage center was still dead.
+   Adds: staggered entrance + breathing icon + accent halo + kbd hint chip. */
+
+.welcome-msg {
+  position: relative;
+  animation: welcome-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.welcome-icon {
+  position: relative;
+  display: inline-block;
+  animation: welcome-breathe 3.6s ease-in-out infinite;
+}
+.welcome-icon::before {
+  content: '';
+  position: absolute;
+  inset: -28px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--accent, #c0553a) 18%, transparent) 0%,
+    transparent 65%
+  );
+  z-index: -1;
+  animation: welcome-halo 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.welcome-msg h3 {
+  animation: welcome-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.09s;
+}
+.welcome-msg p {
+  animation: welcome-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.18s;
+}
+.welcome-hint {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--text-secondary, #6b7280);
+  background: color-mix(in srgb, var(--accent, #c0553a) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #c0553a) 14%, transparent);
+  border-radius: 999px;
+  animation: welcome-rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: 0.28s;
+  letter-spacing: 0.02em;
+}
+.welcome-hint kbd {
+  font: 600 11px/1 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  padding: 2px 6px;
+  background: var(--bg-primary, #faf6f0);
+  border: 1px solid var(--border-color, rgba(0,0,0,0.08));
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--text-secondary, #6b7280);
+  vertical-align: 0;
+}
+@keyframes welcome-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes welcome-breathe {
+  0%, 100% { transform: scale(1);    opacity: 0.65; }
+  50%      { transform: scale(1.06); opacity: 0.95; }
+}
+@keyframes welcome-halo {
+  0%, 100% { opacity: 0.55; transform: scale(0.92); }
+  50%      { opacity: 1;    transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome-msg, .welcome-msg h3, .welcome-msg p, .welcome-hint { animation: none; }
+  .welcome-icon, .welcome-icon::before { animation: none; }
+}

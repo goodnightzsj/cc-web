@@ -146,7 +146,7 @@
 
   function buildWelcomeMarkup(agent) {
     const label = AGENT_LABELS[agent] || AGENT_LABELS.claude;
-    return `<div class="welcome-msg"><div class="welcome-icon">✿</div><h3>欢迎使用 CC-Web</h3><p>开始与 ${label} 对话</p></div>`;
+    return `<div class="welcome-msg"><div class="welcome-icon">✿</div><h3>欢迎使用 CC-Web</h3><p>开始与 ${label} 对话</p><div class="welcome-hint">按 <kbd>/</kbd> 查看指令 · <kbd>Enter</kbd> 发送</div></div>`;
   }
 
   function normalizeAgent(agent) {
