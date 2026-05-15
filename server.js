@@ -1489,9 +1489,13 @@ function formatRuntimeError(agent, raw, context = {}) {
   const condensed = condenseRuntimeError(raw);
   const sig = context.signal && context.signal !== 'SIGTERM' ? context.signal : null;
   // Compose terminal info: prefer signal name when present, else exit code.
+  // Skip OOM-killer hint when the SIGKILL came from our own 3s abort escalation.
   let exitInfo = '';
   if (sig) {
-    exitInfo = `（信号 ${sig}${sig === 'SIGKILL' && context.exitCode == null ? ' · 可能被系统 OOM-killer 终止，请检查内存' : ''}）`;
+    const oomHint = sig === 'SIGKILL' && context.exitCode == null && !context.abortedByUser
+      ? ' · 可能被系统 OOM-killer 终止，请检查内存'
+      : '';
+    exitInfo = `（信号 ${sig}${oomHint}）`;
   } else if (typeof context.exitCode === 'number') {
     exitInfo = `（退出码 ${context.exitCode}）`;
   }
@@ -1622,7 +1626,7 @@ function handleProcessComplete(sessionId, exitCode, signal) {
       : null
   );
   contextLimitExceeded = isContextLimitError(entry.agent || 'claude', `${entry.fullText || ''}\n${stderrSnippet || ''}\n${rawCompletionError || ''}`);
-  const completionError = rawCompletionError ? formatRuntimeError(entry.agent || 'claude', rawCompletionError, { exitCode, signal }) : null;
+  const completionError = rawCompletionError ? formatRuntimeError(entry.agent || 'claude', rawCompletionError, { exitCode, signal, abortedByUser: !!entry.aborted }) : null;
   if (!entry.lastError && rawCompletionError) entry.lastError = rawCompletionError;
 
   plog(exitCode === 0 || exitCode === null ? 'INFO' : 'WARN', 'process_complete', {
@@ -1663,6 +1667,7 @@ function handleProcessComplete(sessionId, exitCode, signal) {
     };
     if (entry.fullTextTruncated) msg.truncated = true;
     if (entry.toolCallsTruncated) msg.toolCallsTruncated = true;
+    if (entry.aborted) msg.aborted = true;
     session.messages.push(msg);
     session.updated = new Date().toISOString();
     if (!entry.ws) session.hasUnread = true;
@@ -3088,6 +3093,10 @@ function handleAbort(ws) {
   if (!entry) return;
 
   plog('INFO', 'user_abort', { sessionId: sessionId.slice(0, 8), pid: entry.pid });
+  // Mark this exit as user-initiated so handleProcessComplete + formatRuntimeError
+  // can suppress the SIGKILL→OOM-killer false alarm and tag the saved partial
+  // assistant message with aborted=true.
+  entry.aborted = true;
   // Immediate user feedback so the abort click feels responsive
   // (between SIGTERM and process_complete there's a 0.3-3s gap)
   const tgterm = { type: 'system_message', message: '已发送终止信号，等待 CLI 退出…', kind: 'abort' };

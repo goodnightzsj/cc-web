@@ -2107,6 +2107,16 @@
 
 	  function buildMsgElement(m) {
 	    const el = createMsgElement(m.role, m.content, m.attachments || []);
+	    if (m.role === 'assistant' && m.aborted) {
+	      el.dataset.aborted = '1';
+	      const bubble = el.querySelector('.msg-bubble');
+	      if (bubble) {
+	        const badge = document.createElement('div');
+	        badge.className = 'msg-aborted-badge';
+	        badge.textContent = '⏹ 已被用户中止';
+	        bubble.appendChild(badge);
+	      }
+	    }
 	    if (m.role === 'assistant' && m.thinking) {
 	      const bubble = el.querySelector('.msg-bubble');
 	      const det = document.createElement('details');
