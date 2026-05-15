@@ -185,7 +185,7 @@ function callSummaryApi(creds, prompt) {
       const base = creds.apiBase.replace(/\/+$/, '');
       const url = new URL(base + '/v1/chat/completions');
       const mod = url.protocol === 'https:' ? require('https') : require('http');
-      const model = creds.model || 'claude-opus-4-6';
+      const model = creds.model || 'claude-opus-4-7';
       const body = JSON.stringify({
         model,
         max_tokens: 1024,
@@ -550,8 +550,9 @@ const wsSessionMap = new Map();
 
 // Default fallback MODEL_MAP (overridden by model config at runtime)
 // opus/sonnet use [1m] suffix to enable 1M context window by default
+// Opus bumped to 4-7 (latest); Sonnet 4-6 is still latest as of 2026-05.
 let MODEL_MAP = {
-  opus: 'claude-opus-4-6[1m]',
+  opus: 'claude-opus-4-7[1m]',
   sonnet: 'claude-sonnet-4-6[1m]',
   haiku: 'claude-haiku-4-5-20251001',
 };
