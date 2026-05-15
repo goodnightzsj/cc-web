@@ -70,6 +70,7 @@
   // --- State ---
   let ws = null;
   let authToken = localStorage.getItem('cc-web-token');
+  let serverHomeDir = ''; // populated from auth_result, used as new-session default cwd
   let currentSessionId = null;
   let sessions = [];
   let sessionCache = new Map();
@@ -1561,6 +1562,7 @@
       case 'auth_result':
         if (msg.success) {
           authToken = msg.token;
+          if (msg.homeDir) serverHomeDir = msg.homeDir;
           localStorage.setItem('cc-web-token', msg.token);
           document.dispatchEvent(new CustomEvent('cc-web-auth-restored'));
           loginOverlay.hidden = true;
@@ -5297,7 +5299,12 @@
     function renderLocalView() {
       const currentPinned = getPinnedCwds(targetAgent);
       const currentRecent = getRecentCwds().filter(p => !currentPinned.includes(p));
-      const filledDirs = [...currentPinned, ...currentRecent].slice(0, 4);
+      let filledDirs = [...currentPinned, ...currentRecent].slice(0, 4);
+      // First-time user: no pinned, no recent → seed with server HOME so the
+      // dialog isn't an empty input box on first open.
+      if (filledDirs.length === 0 && serverHomeDir) {
+        filledDirs = [serverHomeDir];
+      }
       const maxIndex = filledDirs.length;
       if (selectedLocalIndex > maxIndex) selectedLocalIndex = maxIndex;
 
@@ -5317,7 +5324,7 @@
           }).join('')}
           <div class="ns-cwd-row" data-local-row="${filledDirs.length}" style="display:flex;gap:6px;align-items:center;padding:4px 6px;border:1px solid ${selectedLocalIndex === filledDirs.length ? 'var(--accent)' : 'transparent'};border-radius:8px;background:${selectedLocalIndex === filledDirs.length ? 'var(--accent-dim,rgba(100,150,255,0.08))' : 'transparent'};cursor:pointer">
             <input type="radio" name="ns-local-cwd" class="ns-cwd-radio" data-local-radio="${filledDirs.length}" ${selectedLocalIndex === filledDirs.length ? 'checked' : ''}>
-            <input type="text" id="ns-cwd-custom" class="modal-text-input" placeholder="输入自定义目录" style="flex:1">
+            <input type="text" id="ns-cwd-custom" class="modal-text-input" placeholder="${serverHomeDir ? '输入自定义目录，例如 ' + escapeHtml(serverHomeDir) : '输入自定义目录'}" style="flex:1">
           </div>
         </div>
       `;

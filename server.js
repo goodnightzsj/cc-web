@@ -2028,7 +2028,13 @@ wss.on('connection', (ws, req) => {
         authToken = tokenValid ? msg.token : crypto.randomBytes(32).toString('hex');
         activeTokens.set(authToken, Date.now());
         authenticated = true;
-        wsSend(ws, { type: 'auth_result', success: true, token: authToken, mustChangePassword: !!authConfig.mustChange });
+        wsSend(ws, {
+          type: 'auth_result',
+          success: true,
+          token: authToken,
+          mustChangePassword: !!authConfig.mustChange,
+          homeDir: process.env.HOME || process.env.USERPROFILE || '',
+        });
         sendSessionList(ws);
       } else {
         const justBanned = recordAuthFailure(clientIP);
