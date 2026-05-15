@@ -3765,6 +3765,11 @@
       if (e.key === 'Escape') { hideCmdMenu(); return; }
     }
     if (e.key === 'Enter' && !e.shiftKey) {
+      // IME composition guard: when Chinese/Japanese/Korean IME is active,
+      // Enter confirms the candidate word — never send the message.
+      // (`isComposing` is the modern API; `keyCode === 229` is a legacy
+      // signal still emitted by some Safari/Chrome versions during composition.)
+      if (e.isComposing || e.keyCode === 229) return;
       if (isMobileInputMode()) {
         if (!cmdMenu.hidden) {
           e.preventDefault();
