@@ -3277,3 +3277,81 @@ html[data-theme='coolvibe'] .settings-back:hover {
   #streaming-msg .msg-text::after { width: 6px; height: 0.95em; }
   #streaming-msg .msg-bubble::before { height: 1.5px; opacity: 0.45; }
 }
+
+/* ============ Sidebar session list polish (BEAUTY-3) ============ */
+/* (1) active session: left accent rail anchors the eye in peripheral vision */
+.session-item { padding-left: 14px; }
+.session-item.active::before {
+  content: '';
+  position: absolute;
+  left: 4px; top: 8px; bottom: 8px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent, #5d8a54);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent, #5d8a54) 50%, transparent);
+}
+
+/* (2) running session: subtle accent gradient on row + breathing border */
+.session-item:has(.session-item-status) {
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--accent, #5d8a54) 6%, transparent) 0%,
+    transparent 40%
+  );
+}
+.session-item:has(.session-item-status)::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent, #5d8a54) 22%, transparent);
+  opacity: 0;
+  animation: session-running-pulse 2.2s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes session-running-pulse {
+  0%, 100% { opacity: 0; }
+  50%      { opacity: 1; }
+}
+
+/* (3) entrance animation for new sessions */
+.session-item {
+  animation: session-item-in 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes session-item-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* (4) actions: smooth fade-in instead of hover popping */
+.session-item-actions {
+  display: flex !important;
+  opacity: 0;
+  transform: translateX(4px);
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.session-item:hover .session-item-actions,
+.session-item:focus-within .session-item-actions {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+/* (5) empty state icon — echoes welcome ✿ */
+.session-list-empty::before {
+  content: '◌';
+  display: block;
+  font-size: 22px;
+  text-align: center;
+  margin-bottom: 6px;
+  opacity: 0.45;
+  color: var(--accent, #5d8a54);
+}
+
+/* (6) reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .session-item { animation: none; }
+  .session-item:has(.session-item-status)::after { animation: none; opacity: 0.5; }
+  .session-item-actions { transition: none; }
+}
