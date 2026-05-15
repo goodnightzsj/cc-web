@@ -1652,16 +1652,22 @@
         break;
 
       case 'stderr_chunk':
+        // Cross-session isolation (loop2-13): drop in-flight events whose sessionId
+        // doesn't match the current view. Same race window as text/thinking_delta:
+        // server detaches old ws on switch but RTT-window events still arrive.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         appendStderrChunk(msg.text || '');
         break;
 
       case 'tool_start':
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         if (!isGenerating) startGenerating();
         activeToolCalls.set(msg.toolUseId, { name: msg.name, input: msg.input, kind: msg.kind || null, meta: msg.meta || null, done: false });
         appendToolCall(msg.toolUseId, msg.name, msg.input, false, msg.kind || null, msg.meta || null);
         break;
 
       case 'tool_end':
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         if (activeToolCalls.has(msg.toolUseId)) {
           const tc = activeToolCalls.get(msg.toolUseId);
           tc.done = true;
@@ -1682,6 +1688,10 @@
         break;
 
       case 'cost': {
+        // Critical: cost/usage write to sessionCache(currentSessionId,...) which
+        // PERSISTS across reload. Without sessionId guard, A's stats overwrite
+        // B's snapshot in the race window — corruption survives page refresh.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         if (currentSessionId) {
           updateCachedSession(currentSessionId, (snapshot) => { snapshot.totalCost = msg.costUsd; });
         }
@@ -1691,6 +1701,7 @@
       }
 
       case 'usage': {
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         if (msg.totalUsage) {
           if (currentSessionId) {
             updateCachedSession(currentSessionId, (snapshot) => { snapshot.totalUsage = deepClone(msg.totalUsage); });
@@ -1706,6 +1717,7 @@
         break;
 
       case 'system_message':
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         appendSystemMessage(msg.message, msg.kind || null);
         break;
 

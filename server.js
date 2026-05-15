@@ -3327,7 +3327,9 @@ function handleMessage(ws, msg, options = {}) {
       // 优先使用当前活动 entry.ws（reconnect 后更新），fallback 到 spawn 时捕获的 ws
       const currentEntry = activeProcesses.get(currentSessionId);
       const currentWs = currentEntry?.ws || ws;
-      const payload = { type: 'stderr_chunk', text: chunk };
+      // Tag with sessionId so client can drop in-flight stderr from a previous
+      // session during the switch RTT-window (loop2-13 generalization)
+      const payload = { type: 'stderr_chunk', text: chunk, sessionId: currentSessionId };
       // Buffer for reconnect replay even if no current ws
       if (currentEntry) bufferReplayable(currentEntry, payload);
       wsSend(currentWs, payload, true);
@@ -3404,6 +3406,7 @@ function handleMessage(ws, msg, options = {}) {
   const entry = {
     pid: proc.pid,
     ws,
+    sessionId: currentSessionId,
     agent: getSessionAgent(session),
     cwd: spawnSpec.cwd,
     fullText: '',
