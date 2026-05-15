@@ -71,6 +71,13 @@
   --fw-bold:     700;
   --fw-black:    800;
 
+  /* === REDESIGN-16 R16 — Tracking (letter-spacing) === Tailwind-aligned 5-step */
+  --ls-tight:   -0.01em;  /* dense UI / headlines */
+  --ls-normal:  0;
+  --ls-wide:    0.02em;   /* body emphasis / inputs */
+  --ls-wider:   0.04em;   /* mid-caps / kbd */
+  --ls-widest:  0.08em;   /* caps / section title / meta */
+
   /* Semantic composites — single-property assignment site */
   --type-micro:  var(--fw-semibold) var(--fs-micro)/var(--lh-tight)   var(--font-ui);
   --type-meta:   var(--fw-semibold) var(--fs-xs)/var(--lh-snug)       var(--font-ui);
@@ -230,7 +237,7 @@ html[data-theme='coolvibe'] {
 }
 
 html[data-theme='coolvibe'] body {
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-tight);
 }
 
 html[data-theme='coolvibe'] .login-box,
@@ -530,13 +537,13 @@ body {
   font: var(--fw-bold) var(--fs-2xl)/var(--lh-tight) var(--font-ui);
   margin-bottom: var(--space-3);
   color: var(--text-primary);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-tight);
 }
 .login-box p {
   font: var(--fw-normal) var(--fs-sm)/var(--lh-snug) var(--font-ui);
   color: var(--text-muted);
   margin-bottom: var(--space-7);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
 }
 .login-box input {
   width: 100%;
@@ -586,7 +593,7 @@ body {
 @keyframes login-spin {
   to { transform: rotate(360deg); }
 }
-.login-btn-text { letter-spacing: 0.04em; }
+.login-btn-text { letter-spacing: var(--ls-wider); }
 
 /* Material-style ripple (BEAUTY-1) — used by login button + any [data-ripple] */
 .ripple {
@@ -711,7 +718,7 @@ body.session-loading-active {
 .session-loading-title {
   font-size: 24px;
   font-weight: 800;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--ls-wide);
   color: var(--text-primary);
 }
 
@@ -875,7 +882,7 @@ body.session-loading-active {
   color: var(--warning-hover);
   font-size: var(--fs-micro);
   font-weight: 800;
-  letter-spacing: 0.05em;
+  letter-spacing: var(--ls-wider);
   text-transform: uppercase;
 }
 .session-item-status::before {
@@ -1040,7 +1047,7 @@ body.session-loading-active {
 .chat-agent-option.active::after {
   content: '当前';
   font-size: var(--fs-micro);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-wider);
 }
 .chat-runtime-state {
   display: inline-flex;
@@ -1053,7 +1060,7 @@ body.session-loading-active {
   color: var(--warning-hover);
   font-size: var(--fs-xs);
   font-weight: 800;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-wider);
   flex-shrink: 0;
 }
 .chat-runtime-state::before {
@@ -1081,7 +1088,7 @@ body.session-loading-active {
   color: var(--info, #6b7faa);
   background: color-mix(in srgb, var(--info, #6b7faa) 10%, transparent);
   border-radius: var(--radius-xl);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
 }
 .stream-rate[hidden] { display: none; }
 .stream-rate::before {
@@ -1131,7 +1138,7 @@ body.session-loading-active {
   flex-shrink: 0;
   position: relative;
   transition: background var(--dur-fast), box-shadow var(--dur-fast), transform 0.08s ease;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
 }
 .mode-pill::after {
   content: '▾';
@@ -1211,7 +1218,7 @@ body.session-loading-active {
   margin-left: auto;
   font: var(--fw-medium) var(--fs-micro)/1 var(--font-ui);
   color: var(--text-muted);
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
 }
 @media (prefers-reduced-motion: reduce) {
   .mode-menu { animation: none; }
@@ -1319,7 +1326,7 @@ body.session-loading-active {
   font: var(--fw-bold) var(--fs-2xl)/var(--lh-tight) var(--font-ui);
   color: var(--text-primary);
   margin-bottom: var(--space-4);
-  letter-spacing: -0.01em;
+  letter-spacing: var(--ls-tight);
 }
 .welcome-msg p {
   font: var(--fw-normal) var(--fs-md)/var(--lh-normal) var(--font-ui);
@@ -1567,7 +1574,7 @@ body.session-loading-active {
   user-select: none;
   color: var(--text-secondary);
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
   list-style: none;
 }
 .msg-thinking-summary::-webkit-details-marker { display: none; }
@@ -1688,7 +1695,7 @@ body.session-loading-active {
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   opacity: 0.55;
   margin-bottom: var(--space-2);
 }
@@ -1718,7 +1725,7 @@ body.session-loading-active {
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   opacity: 0.6;
   margin-bottom: var(--space-2);
 }
@@ -1732,7 +1739,7 @@ body.session-loading-active {
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   opacity: 0.6;
   margin-bottom: var(--space-2);
 }
@@ -1746,7 +1753,7 @@ body.session-loading-active {
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   opacity: 0.6;
   margin-bottom: var(--space-2);
 }
@@ -1760,7 +1767,7 @@ body.session-loading-active {
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   opacity: 0.7;
   margin-bottom: var(--space-2);
 }
@@ -1774,7 +1781,7 @@ body.session-loading-active {
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   opacity: 0.7;
   margin-bottom: var(--space-2);
 }
@@ -1794,7 +1801,7 @@ body.session-loading-active {
   background: color-mix(in srgb, var(--neutral-500) 10%, transparent);
   border-radius: var(--radius-xl);
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
   width: fit-content;
 }
 
@@ -1815,7 +1822,7 @@ body.session-loading-active {
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-3);
   cursor: pointer;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
   animation: scroll-resume-in var(--dur-emphasis) ease;
   transition: background var(--dur-fast) ease, transform 0.1s ease;
 }
@@ -1848,7 +1855,7 @@ body.session-loading-active {
   color: var(--warning-hover);
   font-size: var(--fs-sm);
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
   list-style: none;
 }
 .msg-stderr-summary::-webkit-details-marker { display: none; }
@@ -1885,7 +1892,7 @@ body.session-loading-active {
 .tool-diff-block { display: flex; flex-direction: column; gap: 6px; }
 .tool-diff-label {
   font-size: var(--fs-xs);
-  letter-spacing: 0.04em;
+  letter-spacing: var(--ls-wider);
   text-transform: uppercase;
   color: var(--text-secondary);
   font-weight: 600;
@@ -2108,7 +2115,7 @@ body.session-loading-active {
   border-radius: var(--radius-pill);
   font-size: var(--fs-micro);
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--ls-wide);
   background: rgba(233, 224, 212, 0.85);
   color: var(--text-secondary);
 }
@@ -2178,7 +2185,7 @@ body.session-loading-active {
 .tool-call-section-label {
   font-size: var(--fs-micro);
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -2836,7 +2843,7 @@ body.session-loading-active {
   gap: var(--space-3);
   font-size: var(--fs-xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--ls-widest);
   text-transform: uppercase;
   color: var(--accent);
   margin-bottom: var(--space-3);
@@ -3417,7 +3424,7 @@ html[data-theme='coolvibe'] .settings-back:hover {
 .import-item-tag {
   font-size: var(--fs-micro);
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: var(--ls-wide);
   color: var(--accent);
   background: rgba(245, 221, 212, 0.9);
   border: 1px solid rgba(192, 85, 58, 0.14);
@@ -3645,7 +3652,7 @@ html[data-theme='coolvibe'] .settings-back:hover {
   border-radius: var(--radius-pill);
   animation: welcome-rise 0.5s var(--ease-standard) both;
   animation-delay: 0.28s;
-  letter-spacing: 0.02em;
+  letter-spacing: var(--ls-wide);
 }
 .welcome-hint kbd {
   font: 600 11px/1 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
