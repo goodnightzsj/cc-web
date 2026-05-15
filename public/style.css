@@ -4239,3 +4239,98 @@ input[type="radio"]:focus-visible {
   font-size: var(--fs-xs);
   color: var(--text-muted);
 }
+
+/* ============ REDESIGN-28 C5 — Custom listbox replacing native <select> ============ */
+.cs-native {
+  /* hidden source-of-truth, takes no space, no focus */
+  position: absolute !important;
+  width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  pointer-events: none;
+}
+.cs-wrap {
+  position: relative;
+  width: 100%;
+}
+.cs-btn {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* settings-select class already provides padding, border, radius, font, arrow */
+}
+.cs-btn-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-focus);
+}
+.cs-list {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  right: 0;
+  z-index: 100;
+  margin: 0;
+  padding: var(--space-2);
+  list-style: none;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-4);
+  max-height: 280px;
+  overflow-y: auto;
+  animation: cs-list-in 0.16s var(--ease-standard);
+}
+@keyframes cs-list-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cs-list { animation: none; }
+}
+.cs-option {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.cs-option:hover:not(.cs-option-disabled) {
+  background: var(--bg-secondary);
+}
+.cs-option:focus-visible,
+.cs-option:focus {
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-focus);
+}
+.cs-option-active {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+.cs-option-active::after {
+  content: '✓';
+  float: right;
+  margin-left: var(--space-3);
+  color: var(--accent);
+}
+.cs-option-disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+/* Mobile: list a bit larger for fingers */
+@media (pointer: coarse) {
+  .cs-option {
+    padding: var(--space-4) var(--space-5);
+    min-height: 44px;
+  }
+}

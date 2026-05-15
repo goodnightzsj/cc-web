@@ -807,6 +807,150 @@
     openKbdHelp();
   });
 
+  // R28 / C5: Custom listbox replacing native <select>. Keeps the original
+  // <select> hidden as the form's source-of-truth (preserves .value reads,
+  // 'change' event listeners, and option lists). The visible UI is a button
+  // + role=listbox dropdown that's fully theme-able and keyboard-navigable.
+  function enhanceSelect(select) {
+    if (!select || select.dataset.csEnhanced === '1') return;
+    select.dataset.csEnhanced = '1';
+    select.classList.add('cs-native');
+    select.setAttribute('aria-hidden', 'true');
+    select.tabIndex = -1;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'cs-wrap';
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cs-btn settings-select';
+    btn.setAttribute('aria-haspopup', 'listbox');
+    btn.setAttribute('aria-expanded', 'false');
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'cs-btn-label';
+    btn.appendChild(labelSpan);
+    if (select.style.cssText) btn.style.cssText = select.style.cssText;
+    const list = document.createElement('ul');
+    list.className = 'cs-list';
+    list.setAttribute('role', 'listbox');
+    list.hidden = true;
+
+    select.parentNode.insertBefore(wrap, select);
+    wrap.appendChild(btn);
+    wrap.appendChild(list);
+    wrap.appendChild(select);
+
+    function refreshLabel() {
+      const opt = select.options[select.selectedIndex];
+      labelSpan.textContent = opt ? opt.textContent : '';
+      btn.disabled = select.disabled;
+    }
+    function rebuildList() {
+      list.innerHTML = '';
+      Array.from(select.options).forEach((opt) => {
+        const li = document.createElement('li');
+        li.className = 'cs-option';
+        li.setAttribute('role', 'option');
+        li.dataset.value = opt.value;
+        li.textContent = opt.textContent;
+        li.tabIndex = -1;
+        li.setAttribute('aria-selected', String(opt.selected));
+        if (opt.selected) li.classList.add('cs-option-active');
+        if (opt.disabled) { li.setAttribute('aria-disabled', 'true'); li.classList.add('cs-option-disabled'); }
+        list.appendChild(li);
+      });
+    }
+    rebuildList();
+    refreshLabel();
+
+    let outsideClickHandler = null;
+    function open() {
+      if (!list.hidden || select.disabled) return;
+      rebuildList();
+      list.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      const focusEl = list.querySelector('.cs-option-active') || list.firstElementChild;
+      if (focusEl) focusEl.focus();
+      outsideClickHandler = (e) => { if (!wrap.contains(e.target)) close(); };
+      setTimeout(() => document.addEventListener('click', outsideClickHandler, true), 0);
+    }
+    function close(returnFocus) {
+      if (list.hidden) return;
+      list.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+      if (outsideClickHandler) {
+        document.removeEventListener('click', outsideClickHandler, true);
+        outsideClickHandler = null;
+      }
+      if (returnFocus) btn.focus();
+    }
+    function commit(value) {
+      if (select.value === value) { close(true); return; }
+      select.value = value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+      refreshLabel();
+      close(true);
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (list.hidden) open(); else close(true);
+    });
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+        e.preventDefault(); open();
+      }
+    });
+    list.addEventListener('click', (e) => {
+      const li = e.target.closest('.cs-option');
+      if (!li || li.classList.contains('cs-option-disabled')) return;
+      commit(li.dataset.value);
+    });
+    list.addEventListener('keydown', (e) => {
+      const cur = document.activeElement;
+      if (e.key === 'Escape') { e.preventDefault(); close(true); return; }
+      if (e.key === 'Tab') { close(false); return; }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        let next = cur && cur.nextElementSibling;
+        while (next && next.classList.contains('cs-option-disabled')) next = next.nextElementSibling;
+        (next || list.firstElementChild)?.focus();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        let prev = cur && cur.previousElementSibling;
+        while (prev && prev.classList.contains('cs-option-disabled')) prev = prev.previousElementSibling;
+        (prev || list.lastElementChild)?.focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault(); list.firstElementChild?.focus();
+      } else if (e.key === 'End') {
+        e.preventDefault(); list.lastElementChild?.focus();
+      } else if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        const li = cur?.closest('.cs-option');
+        if (li && !li.classList.contains('cs-option-disabled')) commit(li.dataset.value);
+      }
+    });
+
+    // Watch native select for external mutations (option list rebuilds, programmatic value)
+    const obs = new MutationObserver(() => { rebuildList(); refreshLabel(); });
+    obs.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'value'] });
+    select.addEventListener('change', refreshLabel);
+  }
+
+  // Auto-enhance any .settings-select that appears in the DOM (settings panel
+  // is rebuilt dynamically when entering different tabs).
+  const csObserver = new MutationObserver((muts) => {
+    for (const m of muts) {
+      m.addedNodes.forEach((node) => {
+        if (node.nodeType !== 1) return;
+        if (node.matches?.('select.settings-select')) enhanceSelect(node);
+        node.querySelectorAll?.('select.settings-select').forEach(enhanceSelect);
+      });
+    }
+  });
+  csObserver.observe(document.body, { childList: true, subtree: true });
+  // Catch any selects already in DOM at boot
+  document.querySelectorAll('select.settings-select').forEach(enhanceSelect);
+
   function cloneMessages(messages) {
     return Array.isArray(messages) ? deepClone(messages) : [];
   }
