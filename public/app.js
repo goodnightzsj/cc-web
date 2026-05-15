@@ -3155,6 +3155,61 @@
       return decorate(content);
     }
 
+    // R44: ExitPlanMode → distinct plan-proposal card with rendered markdown plan.
+    if (kind === 'plan_proposal') {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tool-call-content plan-proposal';
+      const planText = (tool?.meta?.plan) || (effectiveInput && effectiveInput.plan) || '';
+      const head = document.createElement('div');
+      head.className = 'plan-proposal-head';
+      head.innerHTML = '<span class="plan-proposal-icon" aria-hidden="true">✦</span><span class="plan-proposal-title">计划提案</span><span class="plan-proposal-hint">在 CLI 中按 <kbd>⇧Tab</kbd> 退出 Plan 模式</span>';
+      wrapper.appendChild(head);
+      const body = document.createElement('div');
+      body.className = 'plan-proposal-body';
+      try {
+        body.innerHTML = renderMarkdown(String(planText || '(空)'));
+      } catch {
+        body.textContent = String(planText || '(空)');
+      }
+      wrapper.appendChild(body);
+      return decorate(wrapper);
+    }
+
+    // R44: Sub-Agent (Task tool) — show subagent_type + description prominently.
+    if (kind === 'sub_agent') {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'tool-call-content sub-agent';
+      const head = document.createElement('div');
+      head.className = 'sub-agent-head';
+      const subType = tool?.meta?.title || 'Sub-Agent';
+      const desc = tool?.meta?.description || '';
+      head.innerHTML = `<span class="sub-agent-icon" aria-hidden="true">↳</span><span class="sub-agent-title"></span>`;
+      head.querySelector('.sub-agent-title').textContent = subType;
+      wrapper.appendChild(head);
+      if (desc) {
+        const d = document.createElement('div');
+        d.className = 'sub-agent-desc';
+        d.textContent = desc;
+        wrapper.appendChild(d);
+      }
+      // Prompt preview (first 240 chars from server)
+      const prompt = tool?.meta?.prompt || '';
+      if (prompt) {
+        const pre = document.createElement('pre');
+        pre.className = 'sub-agent-prompt';
+        pre.textContent = prompt;
+        wrapper.appendChild(pre);
+      }
+      // If sub-agent finished, show its result text below
+      if (effectiveResult) {
+        const resBox = document.createElement('div');
+        resBox.className = 'sub-agent-result';
+        resBox.appendChild(buildStructuredToolSection('结果', stringifyToolValue(effectiveResult)));
+        wrapper.appendChild(resBox);
+      }
+      return decorate(wrapper);
+    }
+
     if (kind === 'file_change' || kind === 'mcp_tool_call') {
       const wrapper = document.createElement('div');
       wrapper.className = `tool-call-content ${kind === 'file_change' ? 'file-change' : ''}`.trim();

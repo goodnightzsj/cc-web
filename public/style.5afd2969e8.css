@@ -4675,3 +4675,121 @@ input[type="radio"]:focus-visible {
 .msg.system[data-kind="hook"][data-hook-event="Notification"] .msg-bubble::before { content: '🔔 '; }
 .msg.system[data-kind="hook"][data-hook-event="SessionStart"] .msg-bubble::before { content: '⏻ '; }
 .msg.system[data-kind="hook"][data-hook-event="PreCompact"] .msg-bubble::before { content: '🗜 '; }
+
+/* ============ R44 — ExitPlanMode plan-proposal card ============ */
+.tool-call-content.plan-proposal {
+  background: color-mix(in srgb, var(--hook) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--hook) 32%, transparent);
+  border-left: 4px solid var(--hook);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-2) 0;
+}
+.plan-proposal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px dashed color-mix(in srgb, var(--hook) 25%, transparent);
+}
+.plan-proposal-icon {
+  color: var(--hook);
+  font-size: var(--fs-md);
+}
+.plan-proposal-title {
+  flex: 1;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-md);
+  color: var(--hook);
+  letter-spacing: var(--ls-wide);
+}
+.plan-proposal-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.plan-proposal-hint kbd {
+  font: 600 11px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 1px var(--space-2);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+.plan-proposal-body {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+}
+.plan-proposal-body h1,
+.plan-proposal-body h2,
+.plan-proposal-body h3 {
+  margin-top: var(--space-4);
+  margin-bottom: var(--space-2);
+  color: var(--text-primary);
+}
+.plan-proposal-body ul,
+.plan-proposal-body ol {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-7);
+}
+.plan-proposal-body li { margin: var(--space-1) 0; }
+.plan-proposal-body code {
+  background: color-mix(in srgb, var(--hook) 10%, transparent);
+  color: var(--hook);
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
+
+/* ============ R44 — Sub-Agent (Task tool) card ============ */
+.tool-call-content.sub-agent {
+  background: color-mix(in srgb, var(--info) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info) 28%, transparent);
+  border-left: 4px solid var(--info);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+}
+.sub-agent-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.sub-agent-icon {
+  color: var(--info);
+  font-size: var(--fs-md);
+}
+.sub-agent-title {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-md);
+  color: var(--info);
+  letter-spacing: var(--ls-wide);
+}
+.sub-agent-desc {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+.sub-agent-prompt {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-snug);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.sub-agent-result {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed color-mix(in srgb, var(--info) 25%, transparent);
+}
