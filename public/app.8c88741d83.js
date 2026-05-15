@@ -1670,9 +1670,22 @@
     if (d.serviceTier) rows.push(['服务等级', d.serviceTier]);
     if (d.stopReason) rows.push(['停止原因', d.stopReason]);
     if (d.terminalReason) rows.push(['终止原因', d.terminalReason]);
-    if (d.permissionDenials) rows.push(['权限拒绝次数', d.permissionDenials]);
+    // R46: permission_denials now carries the full array; expose count + list.
+    const denialList = Array.isArray(d.permissionDenials) ? d.permissionDenials : [];
+    const denialCount = typeof d.permissionDenials === 'number' ? d.permissionDenials : denialList.length;
+    if (denialCount) rows.push(['权限拒绝次数', denialCount]);
     if (typeof d.costUsd === 'number' && d.costUsd > 0) rows.push(['本轮花费', `$${d.costUsd.toFixed(4)}`]);
-    ctxPopover.innerHTML = `<p class="ctx-popover-title">本轮用量详情</p><dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>`;
+    let denialMarkup = '';
+    if (denialList.length) {
+      const items = denialList.map((dn) => {
+        const inputStr = dn.toolInput ? JSON.stringify(dn.toolInput).slice(0, 200) : '';
+        const display = inputStr.length === 200 ? inputStr + '…' : inputStr;
+        const fullJson = dn.toolInput ? JSON.stringify(dn.toolInput, null, 2) : '';
+        return `<li class="ctx-denial-row"><span class="ctx-denial-tool">${escapeHtml(dn.toolName || '?')}</span><code class="ctx-denial-input" title="${escapeHtml(fullJson)}">${escapeHtml(display)}</code></li>`;
+      }).join('');
+      denialMarkup = `<section class="ctx-denials"><h4 class="ctx-denials-h">权限拒绝明细 <span class="ctx-denials-tally">${denialList.length}</span></h4><ul class="ctx-denials-list">${items}</ul></section>`;
+    }
+    ctxPopover.innerHTML = `<p class="ctx-popover-title">本轮用量详情</p><dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`).join('')}</dl>${denialMarkup}`;
     ctxPopover.hidden = false;
     ctxMeter.setAttribute('aria-expanded', 'true');
     setTimeout(() => {

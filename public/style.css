@@ -4817,6 +4817,63 @@ input[type="radio"]:focus-visible {
   .tool-call-timer[data-level="danger"] { animation: none; }
 }
 
+/* ============ R46 — Permission denials drill-down list inside ctx-popover ============ */
+.ctx-denials {
+  margin-top: var(--space-4);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border-color);
+}
+.ctx-denials-h {
+  margin: 0 0 var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-widest);
+  text-transform: uppercase;
+  color: var(--danger);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.ctx-denials-tally {
+  font-weight: var(--fw-normal);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ls-normal);
+  text-transform: none;
+  color: var(--text-secondary);
+}
+.ctx-denials-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  max-height: 220px;
+  overflow-y: auto;
+}
+.ctx-denial-row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+}
+.ctx-denial-tool {
+  font-weight: var(--fw-semibold);
+  color: var(--danger);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.ctx-denial-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-secondary);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  cursor: help;
+}
+
 .tool-call-mcp-badge {
   display: inline-block;
   margin-right: var(--space-2);
