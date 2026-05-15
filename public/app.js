@@ -1004,8 +1004,6 @@
       taskMode: payload.taskMode || 'local',
       sshHostId: payload.sshHostId || '',
       remoteCwd: payload.remoteCwd || '',
-      historyTotal: typeof payload.historyTotal === 'number' ? payload.historyTotal : null,
-      historyBuffered: typeof payload.historyBuffered === 'number' ? payload.historyBuffered : null,
     };
   }
 
@@ -1372,11 +1370,13 @@
     chatCwd.hidden = !currentCwd || (currentSessionRunning && shouldOverlayRuntimeBadge());
     updateSshHostBadge();
   }
-  // R54: render SSH host badge whenever current session has taskMode='ssh'.
+  // R54: render SSH host badge whenever current session has taskMode='remote'.
   // Hides on local sessions or mobile-running overlay state to mirror cwd.
+  // R55 fix: was checking 'ssh' but the entire codebase (server + client
+  // send-side + persistence) uses 'remote' — typo made R54 totally inert.
   function updateSshHostBadge() {
     if (!sshHostBadge) return;
-    if (currentTaskMode !== 'ssh' || !currentSshHostId) {
+    if (currentTaskMode !== 'remote' || !currentSshHostId) {
       sshHostBadge.hidden = true;
       sshHostBadge.textContent = '';
       sshHostBadge.title = '';
