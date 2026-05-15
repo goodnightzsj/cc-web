@@ -2146,7 +2146,13 @@
 
       case 'system_message':
         if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
-        appendSystemMessage(msg.message, msg.kind || null);
+        // R41: live init events carrying structured detail get rendered as
+        // an expandable card; everything else stays the plain banner.
+        if (msg.kind === 'init' && msg.initDetail) {
+          appendInitCard(msg.message, msg.initDetail);
+        } else {
+          appendSystemMessage(msg.message, msg.kind || null);
+        }
         break;
 
       case 'usage_detail':
@@ -2565,6 +2571,10 @@
   }
 
 	  function buildMsgElement(m) {
+	    // R41: historical init with structured detail → expandable init card.
+	    if (m.role === 'system' && m.kind === 'init' && m.initDetail) {
+	      return buildInitCardElement(m.content || '', m.initDetail);
+	    }
 	    const el = createMsgElement(m.role, m.content, m.attachments || []);
 	    // R36: historical system_messages stored by R33+ (and synthesized by R34
 	    // for legacy sessions) carry a kind field. Mirror appendSystemMessage's
@@ -3412,6 +3422,134 @@
     if (welcome) welcome.remove();
     const el = createMsgElement('system', message);
     if (kind) el.dataset.kind = kind;
+    messagesDiv.appendChild(el);
+    scrollToBottom();
+  }
+
+  // R41: self-designed expandable init card. Summary line stays identical to
+  // the plain banner; clicking the header reveals MCP / tools / slash-command
+  // detail rows. Reuses .msg.system[data-kind="init"] background so visual
+  // identity with R36's data-kind styling is preserved.
+  function buildInitCardElement(message, detail) {
+    const el = createMsgElement('system', '');
+    el.dataset.kind = 'init';
+    el.classList.add('init-card');
+    el.dataset.collapsed = 'true';
+    const bubble = el.querySelector('.msg-bubble');
+    bubble.textContent = '';
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'init-card-header';
+    header.setAttribute('aria-expanded', 'false');
+    header.innerHTML = `
+      <span class="init-card-summary"></span>
+      <span class="init-card-toggle" aria-hidden="true">▸</span>
+    `;
+    header.querySelector('.init-card-summary').textContent = message || '';
+    bubble.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'init-card-body';
+
+    const sections = [];
+    if (Array.isArray(detail.mcpServers) && detail.mcpServers.length) {
+      const sec = document.createElement('section');
+      sec.className = 'init-card-section';
+      const counts = detail.mcpServers.reduce((acc, s) => { acc[s.status] = (acc[s.status]||0)+1; return acc; }, {});
+      const okN = counts.connected || 0;
+      const failN = counts.failed || 0;
+      sec.innerHTML = `<h4 class="init-card-h">MCP 服务 <span class="init-card-tally">${okN}/${detail.mcpServers.length} 已连接${failN ? ` · ${failN} 失败` : ''}</span></h4>`;
+      const list = document.createElement('ul');
+      list.className = 'init-card-mcp';
+      for (const s of detail.mcpServers) {
+        const li = document.createElement('li');
+        li.className = 'init-card-mcp-row';
+        li.dataset.status = s.status || 'unknown';
+        li.innerHTML = `<span class="init-card-mcp-dot" aria-hidden="true"></span><span class="init-card-mcp-name"></span>${s.error ? '<span class="init-card-mcp-error"></span>' : ''}`;
+        li.querySelector('.init-card-mcp-name').textContent = s.name || '(未命名)';
+        if (s.error) li.querySelector('.init-card-mcp-error').textContent = s.error;
+        list.appendChild(li);
+      }
+      sec.appendChild(list);
+      sections.push(sec);
+    }
+    if (Array.isArray(detail.tools) && detail.tools.length) {
+      const sec = document.createElement('section');
+      sec.className = 'init-card-section';
+      sec.innerHTML = `<h4 class="init-card-h">工具 <span class="init-card-tally">${detail.tools.length}</span></h4>`;
+      const cloud = document.createElement('div');
+      cloud.className = 'init-card-cloud';
+      // First 18 chips visible; rest under "+N" toggle (self-designed, no native disclosure)
+      const visible = detail.tools.slice(0, 18);
+      const overflow = detail.tools.slice(18);
+      for (const t of visible) {
+        const span = document.createElement('span');
+        span.className = 'init-card-chip';
+        span.textContent = t;
+        cloud.appendChild(span);
+      }
+      if (overflow.length) {
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'init-card-chip init-card-more';
+        more.textContent = `+${overflow.length}`;
+        more.title = '展开剩余';
+        more.addEventListener('click', () => {
+          for (const t of overflow) {
+            const span = document.createElement('span');
+            span.className = 'init-card-chip';
+            span.textContent = t;
+            cloud.insertBefore(span, more);
+          }
+          more.remove();
+        });
+        cloud.appendChild(more);
+      }
+      sec.appendChild(cloud);
+      sections.push(sec);
+    }
+    if (Array.isArray(detail.slashCommands) && detail.slashCommands.length) {
+      const sec = document.createElement('section');
+      sec.className = 'init-card-section';
+      const customN = detail.slashCommands.filter((c) => c.isCustom).length;
+      sec.innerHTML = `<h4 class="init-card-h">斜杠指令 <span class="init-card-tally">${detail.slashCommands.length}${customN ? ` · ${customN} 自定义` : ''}</span></h4>`;
+      const cloud = document.createElement('div');
+      cloud.className = 'init-card-cloud';
+      for (const c of detail.slashCommands) {
+        const span = document.createElement('span');
+        span.className = 'init-card-chip' + (c.isCustom ? ' init-card-chip-custom' : '');
+        span.textContent = '/' + c.name;
+        cloud.appendChild(span);
+      }
+      sec.appendChild(cloud);
+      sections.push(sec);
+    }
+    // Meta row (api-key source, output-style)
+    if (detail.apiKeySource || detail.outputStyle) {
+      const meta = document.createElement('div');
+      meta.className = 'init-card-meta';
+      const segs = [];
+      if (detail.apiKeySource) segs.push(`API: ${detail.apiKeySource}`);
+      if (detail.outputStyle) segs.push(`Output: ${detail.outputStyle}`);
+      meta.textContent = segs.join(' · ');
+      sections.push(meta);
+    }
+
+    for (const s of sections) body.appendChild(s);
+    bubble.appendChild(body);
+
+    header.addEventListener('click', () => {
+      const collapsed = el.dataset.collapsed === 'true';
+      el.dataset.collapsed = collapsed ? 'false' : 'true';
+      header.setAttribute('aria-expanded', collapsed ? 'true' : 'false');
+    });
+
+    return el;
+  }
+  function appendInitCard(message, detail) {
+    const welcome = messagesDiv.querySelector('.welcome-msg');
+    if (welcome) welcome.remove();
+    const el = buildInitCardElement(message, detail);
     messagesDiv.appendChild(el);
     scrollToBottom();
   }

@@ -4435,3 +4435,142 @@ input[type="radio"]:focus-visible {
     min-width: 0;
   }
 }
+
+/* ============ R41 — Init Card (expandable MCP / tools / slash) ============ */
+.msg.system.init-card .msg-bubble {
+  padding: 0;
+  overflow: hidden;
+}
+.init-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  white-space: pre-line;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.init-card-header:hover { background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.init-card-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+}
+.init-card-toggle {
+  display: inline-block;
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  transition: transform var(--dur-fast) var(--ease-standard);
+  flex: 0 0 auto;
+}
+.msg.system.init-card[data-collapsed="false"] .init-card-toggle { transform: rotate(90deg); }
+.init-card-body {
+  display: grid;
+  gap: var(--space-4);
+  padding: 0 var(--space-5) var(--space-4);
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 60%, transparent);
+}
+.msg.system.init-card[data-collapsed="true"] .init-card-body { display: none; }
+.init-card-h {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--ls-widest);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+.init-card-tally {
+  font-weight: var(--fw-normal);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--ls-normal);
+  text-transform: none;
+  color: var(--text-secondary);
+}
+.init-card-mcp {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+.init-card-mcp-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.init-card-mcp-dot {
+  flex: 0 0 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-circle);
+  background: var(--text-muted);
+}
+.init-card-mcp-row[data-status="connected"] .init-card-mcp-dot { background: var(--success); }
+.init-card-mcp-row[data-status="connected"] { color: var(--text-primary); }
+.init-card-mcp-row[data-status="failed"] .init-card-mcp-dot { background: var(--danger); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 18%, transparent); }
+.init-card-mcp-row[data-status="failed"] { color: var(--danger); }
+.init-card-mcp-row[data-status="pending"] .init-card-mcp-dot { background: var(--warning); }
+.init-card-mcp-name { font-weight: var(--fw-medium); }
+.init-card-mcp-error {
+  flex: 1;
+  text-align: right;
+  font-size: var(--fs-xs);
+  color: var(--danger);
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}
+.init-card-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.init-card-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-primary);
+  font-size: var(--fs-xs);
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  color: var(--text-secondary);
+  cursor: default;
+  line-height: 1.8;
+}
+.init-card-chip-custom {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-weight: var(--fw-medium);
+}
+.init-card-more {
+  cursor: pointer;
+  border-style: dashed;
+  transition: border-color var(--dur-fast) var(--ease-standard);
+}
+.init-card-more:hover { border-color: var(--accent); color: var(--accent); }
+.init-card-meta {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  letter-spacing: var(--ls-wide);
+}
+@media (max-width: 480px) {
+  .init-card-mcp-error { max-width: 38%; }
+}
