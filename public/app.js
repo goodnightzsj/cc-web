@@ -2151,8 +2151,8 @@
         if (msg.kind === 'init' && msg.initDetail) {
           appendInitCard(msg.message, msg.initDetail);
         } else {
-          // R42: errorClass passed through to dataset for typed visual variant.
-          appendSystemMessage(msg.message, msg.kind || null, msg.errorClass || null);
+          // R42 + R43: errorClass + hookEvent passed through to dataset.
+          appendSystemMessage(msg.message, msg.kind || null, msg.errorClass || null, msg.hookEvent || null);
         }
         break;
 
@@ -2161,6 +2161,17 @@
         if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         lastUsageDetail = msg;
         renderCtxMeter(msg);
+        break;
+
+      case 'assistant_stop':
+        // R43: append a stop-reason chip to the streaming assistant bubble so
+        // truncation/refusal/pause is visible at-a-glance (not hidden inside
+        // the ctx-meter popover).
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        if (msg.stopReason) {
+          const streamEl = document.getElementById('streaming-msg');
+          if (streamEl) appendStopReasonChip(streamEl, msg.stopReason);
+        }
         break;
 
       case 'mode_changed':
@@ -2585,6 +2596,12 @@
 	      el.dataset.kind = m.kind;
 	      // R42: historical error bubbles also pick up errorClass for typed styling.
 	      if (m.errorClass) el.dataset.errorClass = m.errorClass;
+	      // R43: historical hook bubbles get their hookEvent → icon mapping.
+	      if (m.hookEvent) el.dataset.hookEvent = m.hookEvent;
+	    }
+	    // R43: historical assistant with stopReason → append the chip at render.
+	    if (m.role === 'assistant' && m.stopReason) {
+	      setTimeout(() => appendStopReasonChip(el, m.stopReason), 0);
 	    }
 	    if (m.role === 'assistant' && m.aborted) {
 	      el.dataset.aborted = '1';
@@ -3420,15 +3437,37 @@
     });
   }
 
-  function appendSystemMessage(message, kind, errorClass) {
+  function appendSystemMessage(message, kind, errorClass, hookEvent) {
     const welcome = messagesDiv.querySelector('.welcome-msg');
     if (welcome) welcome.remove();
     const el = createMsgElement('system', message);
     if (kind) el.dataset.kind = kind;
     // R42: error-class drives 5-tier color/icon variants on .msg.system[data-kind="error"]
     if (errorClass) el.dataset.errorClass = errorClass;
+    // R43: hookEvent drives per-event icon for .msg.system[data-kind="hook"]
+    if (hookEvent) el.dataset.hookEvent = hookEvent;
     messagesDiv.appendChild(el);
     scrollToBottom();
+  }
+
+  // R43: stop-reason chip appended at the foot of an assistant bubble.
+  const STOP_REASON_LABEL = {
+    max_tokens: '⤵ 输出已达 max_tokens 上限，回复未完整',
+    refusal: '⛔ 模型按安全策略拒绝继续',
+    pause_turn: '⏸ 回合已暂停，等待续写指令',
+  };
+  function appendStopReasonChip(bubbleEl, stopReason) {
+    if (!bubbleEl || !stopReason) return;
+    // Avoid duplicating when stream and historical render race.
+    const existing = bubbleEl.querySelector(`.bubble-foot-chip[data-stop="${stopReason}"]`);
+    if (existing) return;
+    const bubble = bubbleEl.querySelector('.msg-bubble');
+    if (!bubble) return;
+    const chip = document.createElement('div');
+    chip.className = 'bubble-foot-chip';
+    chip.dataset.stop = stopReason;
+    chip.textContent = STOP_REASON_LABEL[stopReason] || `↪ ${stopReason}`;
+    bubble.appendChild(chip);
   }
 
   // R41: self-designed expandable init card. Summary line stays identical to

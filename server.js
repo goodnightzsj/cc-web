@@ -1670,6 +1670,8 @@ function handleProcessComplete(sessionId, exitCode, signal) {
     if (entry.fullTextTruncated) msg.truncated = true;
     if (entry.toolCallsTruncated) msg.toolCallsTruncated = true;
     if (entry.aborted) msg.aborted = true;
+    // R43: persist non-end_turn stop reason so historical render can show the chip
+    if (entry.lastStopReason) msg.stopReason = entry.lastStopReason;
     session.messages.push(msg);
     session.updated = new Date().toISOString();
     if (!entry.ws) session.hasUnread = true;

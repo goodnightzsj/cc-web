@@ -4633,3 +4633,45 @@ input[type="radio"]:focus-visible {
   background: color-mix(in srgb, var(--text-muted) 8%, transparent);
 }
 .msg.system[data-kind="error"][data-error-class="unknown"] .msg-bubble::before { content: '⚠'; }
+
+/* ============ R43 — Stop-reason Chip (assistant bubble foot) ============ */
+.bubble-foot-chip {
+  display: inline-flex;
+  align-items: center;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-muted) 8%, transparent);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  line-height: var(--lh-snug);
+}
+.bubble-foot-chip[data-stop="max_tokens"] {
+  border-left-color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning-text, var(--text-primary));
+}
+.bubble-foot-chip[data-stop="refusal"] {
+  border-left-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+.bubble-foot-chip[data-stop="pause_turn"] {
+  border-left-color: var(--info);
+  background: color-mix(in srgb, var(--info) 10%, transparent);
+  color: var(--info);
+}
+
+/* ============ R43 — Hook event typed icons ============ */
+/* Generic .msg.system[data-kind="hook"] already gets baseline styling.
+ * hookEvent variant overrides ONLY the ::before icon (left rail color
+ * stays the existing hook style for consistency). */
+.msg.system[data-kind="hook"][data-hook-event="PreToolUse"] .msg-bubble::before { content: '🛡 '; }
+.msg.system[data-kind="hook"][data-hook-event="PostToolUse"] .msg-bubble::before { content: '✓ '; }
+.msg.system[data-kind="hook"][data-hook-event="Stop"] .msg-bubble::before { content: '⏹ '; }
+.msg.system[data-kind="hook"][data-hook-event="UserPromptSubmit"] .msg-bubble::before { content: '📨 '; }
+.msg.system[data-kind="hook"][data-hook-event="Notification"] .msg-bubble::before { content: '🔔 '; }
+.msg.system[data-kind="hook"][data-hook-event="SessionStart"] .msg-bubble::before { content: '⏻ '; }
+.msg.system[data-kind="hook"][data-hook-event="PreCompact"] .msg-bubble::before { content: '🗜 '; }
