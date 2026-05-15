@@ -272,16 +272,10 @@ html[data-theme='coolvibe'] .chat-title:hover {
 }
 
 html[data-theme='coolvibe'] .chat-agent-btn,
-html[data-theme='coolvibe'] .mode-select {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(234, 247, 251, 0.92));
-  border-color: rgba(167, 205, 216, 0.92);
-  color: #0c6478;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.94);
-}
+/* mode-select theme overrides removed in REDESIGN-6: new .mode-pill
+   auto-themes via --accent-light / --info / --text-muted tokens */
 
-html[data-theme='coolvibe'] .chat-agent-btn:hover,
-html[data-theme='coolvibe'] .mode-select:hover {
+html[data-theme='coolvibe'] .chat-agent-btn:hover {
   background: rgba(228, 244, 248, 0.98);
 }
 
@@ -1036,29 +1030,106 @@ body.session-loading-active {
 .export-btn svg { display: block; }
 
 /* Mode selector */
-.mode-select {
-  -webkit-appearance: none;
+/* Custom mode pill (REDESIGN-6 C1) — replaces native <select> */
+.mode-pill {
   appearance: none;
-  background: var(--bg-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--fw-bold) var(--fs-xs)/1 var(--font-ui);
   color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 4px 24px 4px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  font-family: inherit;
+  background: var(--accent-light);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+  padding: 4px 22px 4px 10px;
+  border-radius: 999px;
   cursor: pointer;
   flex-shrink: 0;
-  outline: none;
-  transition: border-color 0.15s;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%236b5a4d'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 8px center;
+  position: relative;
+  transition: background 0.15s, box-shadow 0.15s, transform 0.08s ease;
+  letter-spacing: 0.02em;
 }
-.mode-select:focus { border-color: var(--accent); }
-.mode-select option {
-  background: var(--bg-secondary);
+.mode-pill::after {
+  content: '▾';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-48%);
+  font-size: 10px;
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+.mode-pill:hover { box-shadow: var(--shadow-1); }
+.mode-pill:active:not(:disabled) { transform: translateY(0.5px); }
+.mode-pill:focus-visible { outline: none; box-shadow: var(--shadow-focus); }
+.mode-pill:disabled { opacity: 0.55; cursor: not-allowed; }
+.mode-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+/* Mode-specific dot colors — drives semantic color recognition */
+.mode-pill[data-mode="default"] .mode-pill-dot,
+.mode-pill-dot[data-mode="default"] { background: var(--text-muted); }
+.mode-pill[data-mode="plan"] .mode-pill-dot,
+.mode-pill-dot[data-mode="plan"] { background: var(--info); }
+/* Pill background tint by mode */
+.mode-pill[data-mode="default"] {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+.mode-pill[data-mode="plan"] {
+  background: color-mix(in srgb, var(--info) 14%, transparent);
+  border-color: color-mix(in srgb, var(--info) 30%, transparent);
+}
+
+.mode-menu {
+  position: absolute;
+  top: calc(var(--header-height, 52px) - 4px);
+  right: 64px;
+  min-width: 180px;
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-3), var(--shadow-inset-hi);
+  z-index: 80;
+  animation: mode-menu-pop 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes mode-menu-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.mode-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 11px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
   color: var(--text-primary);
+  font: var(--fw-semibold) var(--fs-sm)/1.2 var(--font-ui);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.mode-option:hover { background: var(--bg-tertiary); }
+.mode-option.active {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.mode-option .mode-pill-dot { width: 8px; height: 8px; }
+.mode-hint {
+  margin-left: auto;
+  font: var(--fw-medium) var(--fs-micro)/1 var(--font-ui);
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mode-menu { animation: none; }
 }
 
 /* === Messages === */

@@ -1177,7 +1177,7 @@
     currentAgent = normalizeAgent(agent);
     localStorage.setItem('cc-web-agent', currentAgent);
     currentMode = localStorage.getItem(getAgentModeStorageKey(currentAgent)) || 'yolo';
-    modeSelect.value = currentMode;
+    setModeSelectUI(currentMode);
     updateAgentScopedUI();
   }
 
@@ -1238,7 +1238,7 @@
     updateCwdBadge();
     if (snapshot.mode && MODE_LABELS[snapshot.mode]) {
       currentMode = snapshot.mode;
-      modeSelect.value = currentMode;
+      setModeSelectUI(currentMode);
       localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
     }
     currentModel = snapshot.model || '';
@@ -1296,6 +1296,7 @@
     sessionLoadingLabel.textContent = loading ? (options.label || getSessionLoadLabel(sessionId)) : '正在整理消息与上下文…';
     msgInput.disabled = showOverlay;
     modeSelect.disabled = showOverlay;
+    modeSelect.toggleAttribute('aria-disabled', showOverlay);
     sendBtn.disabled = showOverlay;
     abortBtn.disabled = showOverlay;
     if (showOverlay && document.activeElement instanceof HTMLElement) {
@@ -1815,7 +1816,7 @@
       case 'mode_changed':
         if (msg.mode && MODE_LABELS[msg.mode]) {
           currentMode = msg.mode;
-          modeSelect.value = currentMode;
+          setModeSelectUI(currentMode);
           localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
           if (currentSessionId) {
             updateCachedSession(currentSessionId, (snapshot) => { snapshot.mode = msg.mode; });
@@ -3672,7 +3673,7 @@
   function showModePicker() {
     showOptionPicker('选择权限模式', MODE_PICKER_OPTIONS, currentMode, (value) => {
       currentMode = value;
-      modeSelect.value = currentMode;
+      setModeSelectUI(currentMode);
       localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
       if (currentSessionId) {
         send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
@@ -3940,17 +3941,63 @@
     });
   }
 
-  // Mode selector
-  modeSelect.value = currentMode;
-  modeSelect.addEventListener('change', () => {
-    currentMode = modeSelect.value;
-    localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
-    if (currentSessionId) {
-      send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
+  // Mode selector — custom pill + dropdown menu (REDESIGN-6 C1)
+  const modeMenu = $('#mode-menu');
+  const MODE_LABELS_LOCAL = { yolo: 'YOLO', default: '默认', plan: 'Plan' };
+  function setModeSelectUI(mode) {
+    if (!modeSelect) return;
+    const safe = MODE_LABELS_LOCAL[mode] ? mode : 'yolo';
+    modeSelect.dataset.mode = safe;
+    const label = modeSelect.querySelector('.mode-pill-label');
+    if (label) label.textContent = MODE_LABELS_LOCAL[safe];
+    if (modeMenu) {
+      modeMenu.querySelectorAll('.mode-option').forEach((b) => {
+        b.classList.toggle('active', b.dataset.mode === safe);
+      });
     }
-    if (currentMode === 'default') {
-      appendSystemMessage('⚠ 由于项目设计与 CLI 原生逻辑不同，默认模式的授权申请功能暂未实现，建议搭配 Plan 或 YOLO 模式使用。');
-    }
+  }
+  function closeModeMenu() {
+    if (!modeMenu || modeMenu.hidden) return;
+    modeMenu.hidden = true;
+    modeSelect.setAttribute('aria-expanded', 'false');
+  }
+  function toggleModeMenu() {
+    if (!modeMenu || modeSelect.disabled) return;
+    const willOpen = modeMenu.hidden;
+    modeMenu.hidden = !willOpen;
+    modeSelect.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  }
+  setModeSelectUI(currentMode);
+  modeSelect.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleModeMenu();
+  });
+  if (modeMenu) {
+    modeMenu.addEventListener('click', (e) => {
+      const opt = e.target.closest('.mode-option');
+      if (!opt) return;
+      const next = opt.dataset.mode;
+      if (next && next !== currentMode) {
+        currentMode = next;
+        setModeSelectUI(currentMode);
+        localStorage.setItem(getAgentModeStorageKey(currentAgent), currentMode);
+        if (currentSessionId) {
+          send({ type: 'set_mode', sessionId: currentSessionId, mode: currentMode });
+        }
+        if (currentMode === 'default') {
+          appendSystemMessage('⚠ 由于项目设计与 CLI 原生逻辑不同，默认模式的授权申请功能暂未实现，建议搭配 Plan 或 YOLO 模式使用。');
+        }
+      }
+      closeModeMenu();
+    });
+  }
+  document.addEventListener('click', (e) => {
+    if (!modeMenu || modeMenu.hidden) return;
+    if (e.target.closest('#mode-select') || e.target.closest('#mode-menu')) return;
+    closeModeMenu();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modeMenu && !modeMenu.hidden) closeModeMenu();
   });
 
   msgInput.addEventListener('input', () => {

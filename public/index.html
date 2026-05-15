@@ -15,7 +15,7 @@
       document.documentElement.dataset.theme = theme;
     })();
   </script>
-  <link rel="stylesheet" href="style.09769aa2bb.css">
+  <link rel="stylesheet" href="style.7600e29225.css">
   <link id="hljs-theme-link" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
 </head>
 <body>
@@ -70,11 +70,14 @@
         </div>
         <span id="chat-runtime-state" class="chat-runtime-state" hidden>运行中</span>
         <span id="chat-cwd" class="chat-cwd" hidden></span>
-        <select id="mode-select" class="mode-select" title="权限模式">
-          <option value="yolo">YOLO</option>
-          <option value="default">默认</option>
-          <option value="plan">Plan</option>
-        </select>
+        <button id="mode-select" class="mode-pill" type="button" data-mode="yolo" title="权限模式" aria-haspopup="menu" aria-expanded="false">
+          <span class="mode-pill-dot"></span><span class="mode-pill-label">YOLO</span>
+        </button>
+        <div id="mode-menu" class="mode-menu" hidden role="menu">
+          <button type="button" class="mode-option" data-mode="yolo" role="menuitem"><span class="mode-pill-dot" data-mode="yolo"></span>YOLO<span class="mode-hint">无需确认</span></button>
+          <button type="button" class="mode-option" data-mode="default" role="menuitem"><span class="mode-pill-dot" data-mode="default"></span>默认<span class="mode-hint">逐步确认</span></button>
+          <button type="button" class="mode-option" data-mode="plan" role="menuitem"><span class="mode-pill-dot" data-mode="plan"></span>Plan<span class="mode-hint">仅规划</span></button>
+        </div>
         <span id="stream-rate" class="stream-rate" hidden></span>
         <span id="cost-display" class="cost-display" hidden></span>
         <button id="export-btn" class="export-btn" type="button" title="导出对话为 Markdown">
@@ -141,6 +144,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="app.39ddc140fc.js"></script>
+  <script src="app.859cc78312.js"></script>
 </body>
 </html>
