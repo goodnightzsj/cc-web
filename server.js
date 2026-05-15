@@ -1073,12 +1073,14 @@ const PENDING_EVENTS_MAX = 200;
 // (already in entry.toolCalls).
 const REPLAYABLE_TYPES = new Set([
   'system_message', 'thinking_delta', 'stderr_chunk',
-  'cost', 'usage', 'tool_end',
+  'cost', 'usage',
   // R49: ws reconnect during turn-end was losing ctx-meter hydration data
   // (usage_detail) and bubble truncation chip (assistant_stop) because they
-  // weren't being buffered. Add them to the replay set so the reconnect
-  // backfill restores the meter to the just-finished turn's data.
+  // weren't being buffered.
   'usage_detail', 'assistant_stop',
+  // Note: 'tool_end' deliberately NOT in this set — bufferReplayable explicitly
+  // skips it (line below) since toolCalls live in entry.toolCalls and are
+  // included in resume_generating, so replay would only duplicate.
 ]);
 
 function bufferReplayable(entry, payload) {
@@ -1677,6 +1679,9 @@ function handleProcessComplete(sessionId, exitCode, signal) {
     if (entry.aborted) msg.aborted = true;
     // R43: persist non-end_turn stop reason so historical render can show the chip
     if (entry.lastStopReason) msg.stopReason = entry.lastStopReason;
+    // R53: persist accumulated thinking content so historical reload restores
+    // the 'thinking process' details panel (buildMsgElement reads m.thinking).
+    if (entry.fullThinking) msg.thinking = entry.fullThinking;
     // R47: persist the per-turn usage_detail so a re-loaded session can
     // re-hydrate ctx-meter + drill-down popover from the assistant message
     // itself, instead of permanently losing the data once the ws frame is gone.
@@ -1833,7 +1838,7 @@ function recoverProcesses() {
       if (isProcessRunning(pid)) {
         console.log(`[recovery] Re-attaching to session ${sessionId} (PID ${pid})`);
         plog('INFO', 'recovery_alive', { sessionId: sessionId.slice(0, 8), pid, agent });
-        const entry = { pid, ws: null, agent, fullText: '', toolCalls: [], lastCost: null, lastUsage: null, lastError: null, errorSent: false, tailer: null };
+        const entry = { pid, ws: null, agent, fullText: '', fullThinking: '', toolCalls: [], lastCost: null, lastUsage: null, lastError: null, errorSent: false, tailer: null };
         activeProcesses.set(sessionId, entry);
 
         if (fs.existsSync(outputPath)) {
@@ -1850,7 +1855,7 @@ function recoverProcesses() {
         console.log(`[recovery] Processing completed output for session ${sessionId}`);
         plog('INFO', 'recovery_dead', { sessionId: sessionId.slice(0, 8), pid, agent });
         if (fs.existsSync(outputPath)) {
-          const tempEntry = { pid: 0, ws: null, agent, fullText: '', toolCalls: [], lastCost: null, lastUsage: null, lastError: null, errorSent: false, tailer: null };
+          const tempEntry = { pid: 0, ws: null, agent, fullText: '', fullThinking: '', toolCalls: [], lastCost: null, lastUsage: null, lastError: null, errorSent: false, tailer: null };
           const content = fs.readFileSync(outputPath, 'utf8');
           for (const line of content.split('\n')) {
             if (!line.trim()) continue;
@@ -3571,6 +3576,7 @@ function handleMessage(ws, msg, options = {}) {
     agent: getSessionAgent(session),
     cwd: spawnSpec.cwd,
     fullText: '',
+    fullThinking: '',
     attachments: resolvedAttachments,
     toolCalls: [],
     lastCost: null,
