@@ -3435,3 +3435,80 @@ html[data-theme='coolvibe'] .settings-back:hover {
   .welcome-msg, .welcome-msg h3, .welcome-msg p, .welcome-hint { animation: none; }
   .welcome-icon, .welcome-icon::before { animation: none; }
 }
+
+/* ============ Settings panel ceremony + theme-card living swatches (BEAUTY-5) ============ */
+/* Replaces the boring fadeIn (shared with .msg bubbles) with a proper modal
+   ceremony: backdrop blur fades in, panel scale-pops with soft shadow ramp.
+   Theme-card swatches react to hover (pill → block) and breathe gently when
+   active — the only visual signal of what each theme actually looks like. */
+
+.settings-overlay {
+  backdrop-filter: blur(4px) saturate(1.05);
+  -webkit-backdrop-filter: blur(4px) saturate(1.05);
+  animation: settings-overlay-in 0.22s cubic-bezier(.22,.61,.36,1);
+}
+@keyframes settings-overlay-in {
+  from { opacity: 0; backdrop-filter: blur(0) saturate(1); -webkit-backdrop-filter: blur(0) saturate(1); }
+  to   { opacity: 1; backdrop-filter: blur(4px) saturate(1.05); -webkit-backdrop-filter: blur(4px) saturate(1.05); }
+}
+
+.settings-panel {
+  animation: settings-panel-in 0.32s cubic-bezier(.34, 1.36, .52, 1);
+  transform-origin: center 38%;
+  will-change: transform, opacity;
+}
+@keyframes settings-panel-in {
+  0%   { opacity: 0; transform: scale(.96) translateY(8px); box-shadow: 0 0 0 rgba(45,31,20,0); }
+  60%  { opacity: 1; }
+  100% { opacity: 1; transform: scale(1) translateY(0);
+         box-shadow: 0 12px 40px rgba(45,31,20,0.14), 0 2px 8px rgba(45,31,20,0.06); }
+}
+
+/* theme-card swatches: living color preview */
+.theme-card-swatch {
+  transition: height 0.28s cubic-bezier(.34, 1.36, .52, 1),
+              border-radius 0.28s ease,
+              transform 0.28s ease,
+              filter 0.2s ease;
+  will-change: transform;
+}
+.theme-card:hover .theme-card-swatch {
+  height: 22px;
+  border-radius: 8px;
+  filter: saturate(1.15);
+}
+/* 2x2 grid: top-left/bottom-right tilt -1.2°, top-right/bottom-left tilt +1.2° */
+.theme-card:hover .theme-card-swatch:nth-child(4n+1),
+.theme-card:hover .theme-card-swatch:nth-child(4n+4) {
+  transform: translateX(-1px) rotate(-1.2deg);
+}
+.theme-card:hover .theme-card-swatch:nth-child(4n+2),
+.theme-card:hover .theme-card-swatch:nth-child(4n+3) {
+  transform: translateX(1px) rotate(1.2deg);
+}
+
+/* Active card: swatches breathe with staggered phase (creates rolling shimmer) */
+.theme-card.active .theme-card-swatch {
+  height: 20px;
+  border-radius: 8px;
+  animation: theme-swatch-breathe 3.6s ease-in-out infinite;
+}
+.theme-card.active .theme-card-swatch:nth-child(2) { animation-delay: 0.9s; }
+.theme-card.active .theme-card-swatch:nth-child(3) { animation-delay: 1.8s; }
+.theme-card.active .theme-card-swatch:nth-child(4) { animation-delay: 2.7s; }
+@keyframes theme-swatch-breathe {
+  0%, 100% { filter: saturate(1) brightness(1); transform: scale(1); }
+  50%      { filter: saturate(1.18) brightness(1.04); transform: scale(1.03); }
+}
+
+/* theme-card hover lift refinement (works alongside existing :hover rule) */
+.theme-card { will-change: transform; }
+.theme-card:hover {
+  box-shadow: 0 8px 20px rgba(45, 31, 20, 0.08);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-overlay, .settings-panel,
+  .theme-card-swatch,
+  .theme-card.active .theme-card-swatch { animation: none; transition: none; }
+}
