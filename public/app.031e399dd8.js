@@ -1491,13 +1491,14 @@
     }
     // Fallback: if the stored last-session is stale (deleted, renamed, agent
     // mismatch), open the most-recently-updated session for this agent instead.
-    // Without this, a first F5 lands on an empty chat area until the user
-    // manually clicks a session in the sidebar — which is the second-refresh
-    // recovery they observed.
     const fallback = sessions.find((s) => normalizeAgent(s.agent) === targetAgent);
     if (fallback) {
       openSession(fallback.id);
+      return;
     }
+    // No session at all for this agent — drop any optimistic boot overlay (R31)
+    // so the welcome screen shows immediately instead of an indefinite spinner.
+    clearSessionLoading();
   }
 
   function getSessionLoadLabel(sessionId) {
@@ -1883,6 +1884,8 @@
         } else {
           authToken = null;
           localStorage.removeItem('cc-web-token');
+          // Clear any optimistic boot overlay (R31) — login is now the surface
+          clearSessionLoading();
           document.dispatchEvent(new CustomEvent('cc-web-auth-failed'));
           loginOverlay.hidden = false;
           app.hidden = true;
@@ -6059,6 +6062,20 @@
   applyTheme(currentTheme);
   setCurrentAgent(currentAgent);
   renderSessionList();
+  // R31: optimistic boot overlay. If localStorage remembers a last-open session
+  // for the current agent, pre-paint the 'session loading' overlay BEFORE the
+  // ws round-trip (auth + list_sessions, ~200ms-1.5s depending on network).
+  // Without this, the chat area flashes the welcome screen for the duration of
+  // the round-trip, which the user described as 'overlay doesn't trigger for a
+  // while'. The login-overlay (if visible) sits on top so the user only sees
+  // this loading state once they're authenticated and the chat is the active
+  // surface. Session info / fallback / abort paths all call setSessionLoading
+  // again with the correct id, so this pre-paint is harmless even when the
+  // stored id is stale.
+  const optimisticLastId = localStorage.getItem(`cc-web-session-${normalizeAgent(currentAgent)}`);
+  if (optimisticLastId && authToken) {
+    setSessionLoading(optimisticLastId, { blocking: true, label: '正在恢复上次会话…' });
+  }
   connect();
   window.addEventListener('resize', updateCwdBadge);
 
