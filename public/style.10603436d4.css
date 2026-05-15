@@ -44,6 +44,41 @@
   --loading-badge-text: var(--accent);
   --loading-bar-bg: rgba(221, 208, 192, 0.85);
   --loading-bar-fill: linear-gradient(90deg, #c0553a, #d98666, #c0553a);
+
+  /* === Typography Scale (REDESIGN-2 V1) ===
+     9 size + 4 line-height + 5 weight tokens. Replaces 14 ad-hoc font-size
+     values (10/11/11.5/12/13/13.5/14/15/16/17/18/20/22/28/48px) with a
+     modular minor-third scale, and 10 ad-hoc line-heights with 4 semantic
+     tiers. All 3 themes inherit via :root. */
+  --fs-micro:   10px;  /* badge / timestamp / corner glyph */
+  --fs-xs:      11px;  /* meta label / kbd / pill */
+  --fs-sm:      12px;  /* secondary copy / chip */
+  --fs-base:    13px;  /* tool-card body */
+  --fs-md:      14px;  /* default UI body / input */
+  --fs-lg:      15px;  /* dialog body */
+  --fs-xl:      17px;  /* section title */
+  --fs-2xl:     20px;  /* page title */
+  --fs-display: 28px;  /* hero (login / welcome) */
+
+  --lh-tight:   1.25;
+  --lh-snug:    1.4;
+  --lh-normal:  1.55;
+  --lh-relaxed: 1.7;
+
+  --fw-normal:   400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+  --fw-black:    800;
+
+  /* Semantic composites — single-property assignment site */
+  --type-micro:  var(--fw-semibold) var(--fs-micro)/var(--lh-tight)   var(--font-ui);
+  --type-meta:   var(--fw-semibold) var(--fs-xs)/var(--lh-snug)       var(--font-ui);
+  --type-body:   var(--fw-normal)   var(--fs-md)/var(--lh-normal)     var(--font-ui);
+  --type-bubble: var(--fw-normal)   var(--fs-base)/var(--lh-relaxed)  var(--font-ui);
+  --type-title:  var(--fw-bold)     var(--fs-xl)/var(--lh-tight)      var(--font-ui);
+  --type-2xl:    var(--fw-bold)     var(--fs-2xl)/var(--lh-tight)     var(--font-ui);
+  --type-hero:   var(--fw-black)    var(--fs-display)/var(--lh-tight) var(--font-ui);
 }
 
 html[data-theme='coolvibe'] {
@@ -342,8 +377,8 @@ body {
   height: 100dvh;
   min-height: -webkit-fill-available;
   font-family: var(--font-ui);
-  font-size: 15px;
-  line-height: 1.6;
+  font-size: var(--fs-md);
+  line-height: var(--lh-normal);
   color: var(--text-primary);
   background: var(--page-background);
   overflow: hidden;
@@ -383,15 +418,16 @@ body {
   letter-spacing: -1px;
 }
 .login-box h2 {
-  font-size: 24px;
-  margin-bottom: 4px;
+  font: var(--fw-bold) var(--fs-2xl)/var(--lh-tight) var(--font-ui);
+  margin-bottom: 6px;
   color: var(--text-primary);
-  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 .login-box p {
-  color: var(--text-secondary);
+  font: var(--fw-normal) var(--fs-sm)/var(--lh-snug) var(--font-ui);
+  color: var(--text-muted);
   margin-bottom: 28px;
-  font-size: 14px;
+  letter-spacing: 0.02em;
 }
 .login-box input {
   width: 100%;
@@ -714,7 +750,7 @@ body.session-loading-active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 14px;
+  font: var(--fw-medium) var(--fs-md)/var(--lh-snug) var(--font-ui);
   color: var(--text-primary);
 }
 .session-item.active .session-item-title { color: var(--accent); font-weight: 500; }
@@ -821,8 +857,7 @@ body.session-loading-active {
 .chat-title {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
-  font-size: 15px;
+  font: var(--fw-semibold) var(--fs-md)/var(--lh-snug) var(--font-ui);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -831,6 +866,7 @@ body.session-loading-active {
   padding: 2px 4px;
   border-radius: 4px;
   transition: background 0.15s;
+  letter-spacing: -0.005em;
 }
 .chat-title:hover { background: var(--bg-tertiary); }
 .chat-agent-btn {
@@ -1094,12 +1130,15 @@ body.session-loading-active {
   opacity: 0.6;
 }
 .welcome-msg h3 {
-  font-size: 20px;
+  font: var(--fw-bold) var(--fs-2xl)/var(--lh-tight) var(--font-ui);
   color: var(--text-primary);
-  margin-bottom: 8px;
-  font-weight: 600;
+  margin-bottom: 10px;
+  letter-spacing: -0.01em;
 }
-.welcome-msg p { font-size: 14px; }
+.welcome-msg p {
+  font: var(--fw-normal) var(--fs-md)/var(--lh-normal) var(--font-ui);
+  color: var(--text-secondary);
+}
 
 /* Message Bubbles */
 .msg {
@@ -1144,7 +1183,8 @@ body.session-loading-active {
 .msg-bubble {
   padding: 12px 16px;
   border-radius: 16px;
-  line-height: 1.65;
+  font-size: var(--fs-md);
+  line-height: var(--lh-relaxed);
   word-break: break-word;
   min-width: 0;
   max-width: 100%;
@@ -1847,12 +1887,12 @@ body.session-loading-active {
 .tool-call-label {
   display: block;
   width: 100%;
-  font-weight: 700;
+  font: var(--fw-bold) var(--fs-md)/var(--lh-tight) var(--font-ui);
   color: var(--text-primary);
-  line-height: 1.25;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.005em;
 }
 .tool-call-subtitle {
   display: block;
@@ -1862,7 +1902,7 @@ body.session-loading-active {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-muted);
-  font-size: 12px;
+  font: var(--fw-normal) var(--fs-sm)/var(--lh-snug) var(--font-ui);
 }
 .tool-call-state {
   flex-shrink: 0;
