@@ -4166,3 +4166,32 @@ input[type="radio"]:focus-visible {
   box-shadow: var(--shadow-focus);
   border-radius: var(--radius-sm);
 }
+
+/* ============ REDESIGN-19 R19 — A11y skip-link + sr-only utility ============ */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: var(--space-2);
+  z-index: 9999;
+  padding: var(--space-3) var(--space-5);
+  background: var(--accent);
+  color: #fff;
+  font: var(--type-md);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+.skip-link:focus,
+.skip-link:focus-visible {
+  left: var(--space-2);
+  box-shadow: var(--shadow-focus);
+  outline: none;
+}
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  padding: 0; margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

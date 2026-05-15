@@ -3291,18 +3291,29 @@
       const item = document.createElement('div');
       item.className = `session-item${s.id === currentSessionId ? ' active' : ''}`;
       item.dataset.id = s.id;
+      item.tabIndex = 0;
+      item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', String(s.id === currentSessionId));
+      item.setAttribute('aria-label', `${s.title || 'Untitled'}${s.isRunning ? '，运行中' : ''}${s.hasUnread ? '，有未读消息' : ''}`);
       item.innerHTML = `
         <div class="session-item-main">
           <span class="session-item-title">${escapeHtml(s.title || 'Untitled')}</span>
           ${s.isRunning ? '<span class="session-item-status">运行中</span>' : ''}
         </div>
-        ${s.hasUnread ? '<span class="session-unread-dot"></span>' : ''}
+        ${s.hasUnread ? '<span class="session-unread-dot" role="status" aria-label="有未读消息"></span>' : ''}
         <span class="session-item-time">${timeAgo(s.updated)}</span>
         <div class="session-item-actions">
-          <button class="session-item-btn edit" title="重命名">✎</button>
-          <button class="session-item-btn delete" title="删除">×</button>
+          <button class="session-item-btn edit" title="重命名" aria-label="重命名会话">✎</button>
+          <button class="session-item-btn delete" title="删除" aria-label="删除会话">×</button>
         </div>
       `;
+      item.addEventListener('keydown', (e) => {
+        if (e.target !== item) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          item.click();
+        }
+      });
 
       item.addEventListener('click', (e) => {
         const target = e.target;

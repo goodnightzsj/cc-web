@@ -15,10 +15,11 @@
       document.documentElement.dataset.theme = theme;
     })();
   </script>
-  <link rel="stylesheet" href="style.162460b156.css">
+  <link rel="stylesheet" href="style.e03e726b1c.css">
   <link id="hljs-theme-link" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
 </head>
 <body>
+  <a class="skip-link" href="#msg-input">跳到输入框</a>
   <!-- Login -->
   <div id="login-overlay" class="login-overlay">
     <div class="login-box">
@@ -43,15 +44,15 @@
       <div class="sidebar-header">
         <div class="new-chat-split">
           <button id="new-chat-btn" class="new-chat-btn">+ 新会话</button>
-          <button id="new-chat-arrow" class="new-chat-arrow" title="更多">▾</button>
+          <button id="new-chat-arrow" class="new-chat-arrow" title="更多" aria-label="更多新会话选项">▾</button>
         </div>
         <div id="new-chat-dropdown" class="new-chat-dropdown" hidden>
           <button id="import-session-btn">导入本地 CLI 会话</button>
         </div>
       </div>
-      <div id="session-list" class="session-list"></div>
+      <div id="session-list" class="session-list" role="listbox" aria-label="会话列表"></div>
       <div class="sidebar-footer">
-        <button id="settings-btn" class="settings-btn" title="设置">⚙</button>
+        <button id="settings-btn" class="settings-btn" title="设置" aria-label="打开设置">⚙</button>
         <span class="brand">CC-Web</span>
       </div>
     </aside>
@@ -61,7 +62,7 @@
     <!-- Chat -->
     <main class="chat-main">
       <header class="chat-header">
-        <button id="menu-btn" class="menu-btn" title="菜单">☰</button>
+        <button id="menu-btn" class="menu-btn" title="菜单" aria-label="打开侧栏菜单">☰</button>
         <span id="chat-title" class="chat-title">新会话</span>
         <button id="chat-agent-btn" class="chat-agent-btn" type="button" aria-haspopup="menu" aria-expanded="false">Claude</button>
         <div id="chat-agent-menu" class="chat-agent-menu" hidden>
@@ -80,7 +81,7 @@
         </div>
         <span id="stream-rate" class="stream-rate" hidden></span>
         <span id="cost-display" class="cost-display" hidden></span>
-        <button id="export-btn" class="export-btn" type="button" title="导出对话为 Markdown">
+        <button id="export-btn" class="export-btn" type="button" title="导出对话为 Markdown" aria-label="导出对话为 Markdown">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
             <polyline points="7 10 12 15 17 10"></polyline>
@@ -110,18 +111,18 @@
         <div id="attachment-tray" class="attachment-tray" hidden></div>
         <div class="input-wrapper">
           <input id="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
-          <button id="attach-btn" class="attach-btn" title="上传图片" type="button">
+          <button id="attach-btn" class="attach-btn" title="上传图片" type="button" aria-label="上传图片附件">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21.44 11.05l-8.49 8.49a6 6 0 1 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
             </svg>
           </button>
           <textarea id="msg-input" rows="1" placeholder="输入消息… 输入 / 查看指令" autocomplete="off"></textarea>
-          <button id="send-btn" class="send-btn" title="发送">
+          <button id="send-btn" class="send-btn" title="发送" aria-label="发送消息">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
             </svg>
           </button>
-          <button id="abort-btn" class="abort-btn" title="停止" hidden>
+          <button id="abort-btn" class="abort-btn" title="停止" aria-label="中断当前响应" hidden>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="6" width="12" height="12" rx="2"></rect>
             </svg>
@@ -144,6 +145,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="app.292b28717e.js"></script>
+  <script src="app.c89ccddf48.js"></script>
 </body>
 </html>
