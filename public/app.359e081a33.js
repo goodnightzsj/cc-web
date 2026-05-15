@@ -2711,6 +2711,117 @@
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   }
 
+  // --- Export current session as Markdown (D) ---
+  function fenceLang(toolName) {
+    const map = { Bash: 'bash', Edit: 'diff', Write: '', Read: '', MultiEdit: 'diff' };
+    return map[toolName] !== undefined ? map[toolName] : '';
+  }
+  function escapeMd(s) {
+    return String(s == null ? '' : s);
+  }
+  function serializeToolCall(tc) {
+    const lines = [];
+    const name = tc.name || '?';
+    lines.push(`> 🔧 **${name}**${tc.isError ? ' · ❌ error' : ''}`);
+    if (tc.meta?.subtitle) lines.push(`> \`${tc.meta.subtitle}\``);
+    if (tc.input != null) {
+      // Edit/MultiEdit/Write specials
+      if (name === 'Edit' && tc.input?.old_string !== undefined) {
+        lines.push('', '```diff');
+        for (const ln of String(tc.input.old_string || '').split('\n')) lines.push('- ' + ln);
+        for (const ln of String(tc.input.new_string || '').split('\n')) lines.push('+ ' + ln);
+        lines.push('```');
+      } else if (name === 'MultiEdit' && Array.isArray(tc.input?.edits)) {
+        for (let i = 0; i < tc.input.edits.length; i++) {
+          const e = tc.input.edits[i];
+          lines.push('', `_edit ${i + 1}_`, '```diff');
+          for (const ln of String(e?.old_string || '').split('\n')) lines.push('- ' + ln);
+          for (const ln of String(e?.new_string || '').split('\n')) lines.push('+ ' + ln);
+          lines.push('```');
+        }
+      } else if (name === 'Write' && tc.input?.content !== undefined) {
+        lines.push('', '```', String(tc.input.content), '```');
+      } else {
+        const inputStr = typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input, null, 2);
+        if (inputStr && inputStr !== '{}' && inputStr !== 'null') {
+          lines.push('', '```json', inputStr, '```');
+        }
+      }
+    }
+    if (tc.result) {
+      const lang = fenceLang(name);
+      lines.push('', `<details><summary>输出${tc.resultTruncated ? ` (已显示 ${tc.result.length}B / 共 ${tc.resultTotalLength}B)` : ''}</summary>`, '', '```' + lang, String(tc.result), '```', '', '</details>');
+    }
+    return lines.join('\n');
+  }
+  function buildSessionMarkdown(snapshot) {
+    if (!snapshot) return '# (空会话)\n';
+    const out = [];
+    out.push(`# ${snapshot.title || snapshot.sessionId || '会话'}`);
+    out.push('');
+    out.push(`- agent: \`${snapshot.agent || 'claude'}\``);
+    if (snapshot.cwd) out.push(`- cwd: \`${snapshot.cwd}\``);
+    if (snapshot.totalCost) out.push(`- cost: $${Number(snapshot.totalCost).toFixed(4)}`);
+    if (snapshot.totalUsage) {
+      const u = snapshot.totalUsage;
+      out.push(`- tokens: in ${u.inputTokens || 0} · out ${u.outputTokens || 0}${u.cachedInputTokens ? ' · cache ' + u.cachedInputTokens : ''}`);
+    }
+    out.push(`- exported: ${new Date().toISOString()}`);
+    out.push('');
+    out.push('---', '');
+    const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+    for (const m of messages) {
+      const role = m.role || 'assistant';
+      const ts = m.timestamp ? ` · _${m.timestamp}_` : '';
+      out.push(`## ${role === 'user' ? '👤 user' : role === 'system' ? '🛈 system' : '🤖 assistant'}${ts}`);
+      out.push('');
+      if (m.thinking) {
+        out.push('<details><summary>✦ 思考过程</summary>', '', '> ' + escapeMd(m.thinking).split('\n').join('\n> '), '', '</details>', '');
+      }
+      if (m.content) {
+        out.push(escapeMd(m.content));
+        out.push('');
+      }
+      if (Array.isArray(m.toolCalls) && m.toolCalls.length) {
+        for (const tc of m.toolCalls) {
+          out.push(serializeToolCall(tc));
+          out.push('');
+        }
+      }
+      if (Array.isArray(m.attachments) && m.attachments.length) {
+        out.push('_附件：' + m.attachments.map((a) => a.name || a.id || 'attachment').join(', ') + '_');
+        out.push('');
+      }
+    }
+    return out.join('\n');
+  }
+  function exportCurrentSessionMarkdown() {
+    if (!currentSessionId) {
+      appendError('没有活动会话可导出');
+      return;
+    }
+    const cached = sessionCache.get(currentSessionId);
+    const snapshot = cached?.snapshot;
+    if (!snapshot) {
+      appendError('当前会话尚未加载完成，请稍候再试');
+      return;
+    }
+    const md = buildSessionMarkdown(snapshot);
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const safeTitle = (snapshot.title || snapshot.sessionId || 'session').replace(/[^\w一-龥\-_.]/g, '_').slice(0, 60);
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[T:]/g, '-');
+    a.href = url;
+    a.download = `cc-web-${safeTitle}-${stamp}.md`;
+    document.body.appendChild(a);
+    a.click();
+    requestAnimationFrame(() => {
+      a.remove();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   function appendSystemMessage(message, kind) {
     const welcome = messagesDiv.querySelector('.welcome-msg');
     if (welcome) welcome.remove();
@@ -3345,6 +3456,15 @@
         if (targetAgent === currentAgent) return;
         syncViewForAgent(targetAgent, { preserveCurrent: false, loadLast: true });
       });
+    });
+  }
+
+  // Export current session as Markdown
+  const exportBtn = $('#export-btn');
+  if (exportBtn) {
+    exportBtn.addEventListener('click', () => {
+      try { exportCurrentSessionMarkdown(); }
+      catch (e) { console.error('export failed', e); appendError('导出失败：' + (e?.message || e)); }
     });
   }
 
