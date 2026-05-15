@@ -2187,8 +2187,8 @@
         if (msg.kind === 'init' && msg.initDetail) {
           appendInitCard(msg.message, msg.initDetail);
         } else {
-          // R42 + R43: errorClass + hookEvent passed through to dataset.
-          appendSystemMessage(msg.message, msg.kind || null, msg.errorClass || null, msg.hookEvent || null);
+          // R42 + R43 + R49: errorClass + hookEvent + warningType all forwarded.
+          appendSystemMessage(msg.message, msg.kind || null, msg.errorClass || null, msg.hookEvent || null, msg.warningType || null);
         }
         break;
 
@@ -2678,6 +2678,8 @@
 	      if (m.errorClass) el.dataset.errorClass = m.errorClass;
 	      // R43: historical hook bubbles get their hookEvent → icon mapping.
 	      if (m.hookEvent) el.dataset.hookEvent = m.hookEvent;
+	      // R49: historical warning bubbles get warningType for icon.
+	      if (m.warningType) el.dataset.warningType = m.warningType;
 	    }
 	    // R43: historical assistant with stopReason → append the chip at render.
 	    if (m.role === 'assistant' && m.stopReason) {
@@ -3606,7 +3608,7 @@
     });
   }
 
-  function appendSystemMessage(message, kind, errorClass, hookEvent) {
+  function appendSystemMessage(message, kind, errorClass, hookEvent, warningType) {
     const welcome = messagesDiv.querySelector('.welcome-msg');
     if (welcome) welcome.remove();
     const el = createMsgElement('system', message);
@@ -3615,6 +3617,8 @@
     if (errorClass) el.dataset.errorClass = errorClass;
     // R43: hookEvent drives per-event icon for .msg.system[data-kind="hook"]
     if (hookEvent) el.dataset.hookEvent = hookEvent;
+    // R49: warningType drives icon for .msg.system[data-kind="warning"]
+    if (warningType) el.dataset.warningType = warningType;
     messagesDiv.appendChild(el);
     scrollToBottom();
   }

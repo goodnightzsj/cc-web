@@ -4676,6 +4676,25 @@ input[type="radio"]:focus-visible {
 .msg.system[data-kind="hook"][data-hook-event="SessionStart"] .msg-bubble::before { content: '⏻ '; }
 .msg.system[data-kind="hook"][data-hook-event="PreCompact"] .msg-bubble::before { content: '🗜 '; }
 
+/* ============ R49 — Warning banner (model fallback / context warning) ============ */
+.msg.system[data-kind="warning"] .msg-bubble {
+  border-left: 3px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning-text, var(--text-primary));
+  position: relative;
+  padding-left: var(--space-7);
+}
+.msg.system[data-kind="warning"] .msg-bubble::before {
+  position: absolute;
+  left: var(--space-3);
+  top: var(--space-3);
+  font-size: var(--fs-md);
+  line-height: 1;
+  content: '⚠';
+}
+.msg.system[data-kind="warning"][data-warning-type="model_fallback"] .msg-bubble::before { content: '↻'; }
+.msg.system[data-kind="warning"][data-warning-type="context_warning"] .msg-bubble::before { content: '📊'; }
+
 /* ============ R44 — ExitPlanMode plan-proposal card ============ */
 .tool-call-content.plan-proposal {
   background: color-mix(in srgb, var(--hook) 8%, transparent);

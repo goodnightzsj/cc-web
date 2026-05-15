@@ -1074,6 +1074,11 @@ const PENDING_EVENTS_MAX = 200;
 const REPLAYABLE_TYPES = new Set([
   'system_message', 'thinking_delta', 'stderr_chunk',
   'cost', 'usage', 'tool_end',
+  // R49: ws reconnect during turn-end was losing ctx-meter hydration data
+  // (usage_detail) and bubble truncation chip (assistant_stop) because they
+  // weren't being buffered. Add them to the replay set so the reconnect
+  // backfill restores the meter to the just-finished turn's data.
+  'usage_detail', 'assistant_stop',
 ]);
 
 function bufferReplayable(entry, payload) {
