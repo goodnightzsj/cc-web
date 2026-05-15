@@ -1,0 +1,26 @@
+{
+  "name": "CC-Web — Claude / Codex Web Chat",
+  "short_name": "CC-Web",
+  "description": "Web UI wrapping Claude Code and Codex CLI subprocesses for chat-style sessions.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#faf6f0",
+  "theme_color": "#c0553a",
+  "lang": "zh-CN",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}
