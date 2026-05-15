@@ -1081,7 +1081,9 @@ function bufferReplayable(entry, payload) {
   entry.pendingEvents = entry.pendingEvents || [];
   entry.pendingEvents.push(payload);
   if (entry.pendingEvents.length > PENDING_EVENTS_MAX) {
-    entry.pendingEvents.splice(0, entry.pendingEvents.length - PENDING_EVENTS_MAX);
+    const dropCount = entry.pendingEvents.length - PENDING_EVENTS_MAX;
+    entry.pendingEvents.splice(0, dropCount);
+    entry.pendingDropped = (entry.pendingDropped || 0) + dropCount;
   }
 }
 
@@ -1094,12 +1096,23 @@ function wsSendWithReplay(entry, data, dropIfBacklogged = false) {
 function flushPendingEvents(entry, ws) {
   if (!entry || !ws || ws.readyState !== 1) return 0;
   const events = entry.pendingEvents || [];
-  if (events.length === 0) return 0;
+  const dropped = entry.pendingDropped || 0;
+  if (events.length === 0 && dropped === 0) return 0;
+  // Prepend a notice when some replayable events were truncated
+  if (dropped > 0) {
+    const notice = {
+      type: 'system_message',
+      kind: 'backfill-truncated',
+      message: `重连补送 ${events.length} 条事件，另有 ${dropped} 条因缓冲上限（${PENDING_EVENTS_MAX}）被丢弃`,
+    };
+    try { ws.send(JSON.stringify(notice)); } catch {}
+  }
   for (const ev of events) {
     try { ws.send(JSON.stringify(ev)); } catch {}
   }
   const n = events.length;
   entry.pendingEvents = [];
+  entry.pendingDropped = 0;
   return n;
 }
 
