@@ -1321,6 +1321,46 @@
     costDisplay.textContent = formatStats(msg?.totalUsage, msg?.totalCost) || '';
   }
 
+  // --- Stream rate (B): rolling 5s window, ~chars/4 = approx tokens ---
+  const streamRateEl = $('#stream-rate');
+  const STREAM_WINDOW_MS = 5000;
+  const streamSamples = []; // { ts, chars }
+  let streamRateTimer = null;
+  function recordStreamSample(text) {
+    if (!text) return;
+    const ts = performance.now();
+    streamSamples.push({ ts, chars: text.length });
+    pruneStreamSamples(ts);
+    if (!streamRateTimer) {
+      streamRateTimer = setInterval(updateStreamRate, 500);
+      updateStreamRate();
+    }
+  }
+  function pruneStreamSamples(now = performance.now()) {
+    const cutoff = now - STREAM_WINDOW_MS;
+    while (streamSamples.length && streamSamples[0].ts < cutoff) streamSamples.shift();
+  }
+  function updateStreamRate() {
+    if (!streamRateEl) return;
+    pruneStreamSamples();
+    if (!isGenerating || streamSamples.length === 0) {
+      stopStreamRate();
+      return;
+    }
+    const now = performance.now();
+    const oldest = streamSamples[0].ts;
+    const seconds = Math.max(0.5, (now - oldest) / 1000);
+    const chars = streamSamples.reduce((a, b) => a + b.chars, 0);
+    const tokensPerSec = (chars / 4) / seconds; // ≈ tokens/sec
+    streamRateEl.hidden = false;
+    streamRateEl.textContent = `${tokensPerSec.toFixed(1)} tok/s`;
+  }
+  function stopStreamRate() {
+    if (streamRateTimer) { clearInterval(streamRateTimer); streamRateTimer = null; }
+    if (streamRateEl) { streamRateEl.hidden = true; streamRateEl.textContent = ''; }
+    streamSamples.length = 0;
+  }
+
 	  function _splitCodexThinkingModel(model) {
 	    const raw = String(model || '').trim();
 	    if (!raw) return { base: '', level: '' };
@@ -1594,12 +1634,14 @@
       case 'text_delta':
         if (!isGenerating) startGenerating();
         pendingText += msg.text;
+        recordStreamSample(msg.text || '');
         scheduleRender();
         break;
 
       case 'thinking_delta':
         if (!isGenerating) startGenerating();
         pendingThinking += msg.text || '';
+        recordStreamSample(msg.text || '');
         scheduleRender();
         break;
 
@@ -1847,6 +1889,7 @@
     sendBtn.hidden = false;
     abortBtn.hidden = true;
     setCurrentSessionRunningState(false);
+    stopStreamRate();
     msgInput.focus();
 
     if (pendingText) flushRender();
@@ -2436,6 +2479,55 @@
     return null;
   }
 
+  // Line-level LCS (F): returns {a:[{line,changed}], b:[{line,changed}]}
+  function lcsLineDiff(beforeStr, afterStr) {
+    const a = beforeStr.split('\n');
+    const b = afterStr.split('\n');
+    const n = a.length, m = b.length;
+    // O(n*m) LCS DP — capped for sanity
+    if (n * m > 200000) {
+      // Fallback for very large diffs: mark every line as changed
+      return { a: a.map((l) => ({ line: l, changed: true })), b: b.map((l) => ({ line: l, changed: true })) };
+    }
+    const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+    for (let i = n - 1; i >= 0; i--) {
+      for (let j = m - 1; j >= 0; j--) {
+        if (a[i] === b[j]) dp[i][j] = dp[i + 1][j + 1] + 1;
+        else dp[i][j] = Math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    const aOut = [], bOut = [];
+    let i = 0, j = 0;
+    while (i < n && j < m) {
+      if (a[i] === b[j]) {
+        aOut.push({ line: a[i], changed: false });
+        bOut.push({ line: b[j], changed: false });
+        i++; j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        aOut.push({ line: a[i], changed: true });
+        i++;
+      } else {
+        bOut.push({ line: b[j], changed: true });
+        j++;
+      }
+    }
+    while (i < n) { aOut.push({ line: a[i++], changed: true }); }
+    while (j < m) { bOut.push({ line: b[j++], changed: true }); }
+    return { a: aOut, b: bOut };
+  }
+
+  function renderDiffPane(lines, sideClass) {
+    const pre = document.createElement('pre');
+    pre.className = `diff-pane ${sideClass}`;
+    for (const { line, changed } of lines) {
+      const row = document.createElement('div');
+      row.className = `diff-line${changed ? ' diff-line-changed' : ''}`;
+      row.textContent = line || '​'; // zero-width to keep empty lines tall
+      pre.appendChild(row);
+    }
+    return pre;
+  }
+
   function renderDiffHunks(hunks) {
     if (!Array.isArray(hunks) || !hunks.length) return null;
     const root = document.createElement('div');
@@ -2453,17 +2545,18 @@
       panes.className = 'tool-diff-panes';
       const isNew = !hunk.before;
       const isDelete = !hunk.after;
-      if (!isNew) {
-        const a = document.createElement('pre');
-        a.className = 'diff-pane removed';
-        a.textContent = hunk.before;
-        panes.appendChild(a);
-      }
-      if (!isDelete) {
-        const b = document.createElement('pre');
-        b.className = 'diff-pane added';
-        b.textContent = hunk.after;
-        panes.appendChild(b);
+      if (!isNew && !isDelete) {
+        const { a, b } = lcsLineDiff(hunk.before, hunk.after);
+        panes.appendChild(renderDiffPane(a, 'removed'));
+        panes.appendChild(renderDiffPane(b, 'added'));
+      } else if (!isNew) {
+        // Pure delete
+        const lines = hunk.before.split('\n').map((l) => ({ line: l, changed: true }));
+        panes.appendChild(renderDiffPane(lines, 'removed'));
+      } else if (!isDelete) {
+        // Pure add / new file
+        const lines = hunk.after.split('\n').map((l) => ({ line: l, changed: true }));
+        panes.appendChild(renderDiffPane(lines, 'added'));
       }
       block.appendChild(panes);
       root.appendChild(block);
@@ -2884,27 +2977,44 @@
     if (img && img.src) openLightbox(img.src);
   });
 
-  // Stream stderr chunks from the CLI subprocess into a single collapsible block.
-  // Multiple chunks within ~1s coalesce so high-frequency warnings don't spam.
+  // Stream stderr chunks from the CLI subprocess (E):
+  // - each chunk prefixed with [HH:MM:SS]
+  // - >3s silence OR >50 lines in current panel → start new panel
   let _stderrEl = null;
   let _stderrIdleTimer = null;
+  let _stderrLineCount = 0;
+  const STDERR_IDLE_MS = 3000;
+  const STDERR_MAX_LINES = 50;
+  function stderrTimestamp(d = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `[${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}]`;
+  }
   function appendStderrChunk(text) {
     if (!text) return;
     const welcome = messagesDiv.querySelector('.welcome-msg');
     if (welcome) welcome.remove();
-    if (!_stderrEl || !_stderrEl.isConnected) {
+    const incomingLines = text.split('\n').filter((l) => l.length > 0);
+    if (!incomingLines.length) return;
+    const stamp = stderrTimestamp();
+    const stamped = incomingLines.map((l) => `${stamp} ${l}`).join('\n') + '\n';
+    if (!_stderrEl || !_stderrEl.isConnected || _stderrLineCount >= STDERR_MAX_LINES) {
       _stderrEl = document.createElement('details');
       _stderrEl.className = 'msg-stderr';
       _stderrEl.open = true;
-      _stderrEl.innerHTML = '<summary class="msg-stderr-summary"><span class="msg-stderr-icon">⚠</span><span>CLI stderr</span></summary><pre class="msg-stderr-body"></pre>';
+      _stderrEl.innerHTML = `<summary class="msg-stderr-summary"><span class="msg-stderr-icon">⚠</span><span>CLI stderr · ${stamp}</span></summary><pre class="msg-stderr-body"></pre>`;
       messagesDiv.appendChild(_stderrEl);
+      _stderrLineCount = 0;
     }
     const body = _stderrEl.querySelector('.msg-stderr-body');
-    if (body) body.textContent += text;
+    if (body) body.textContent += stamped;
+    _stderrLineCount += incomingLines.length;
     scrollToBottom();
     if (_stderrIdleTimer) clearTimeout(_stderrIdleTimer);
-    // Detach pointer after 1s of silence so the next burst starts a fresh block
-    _stderrIdleTimer = setTimeout(() => { _stderrEl = null; _stderrIdleTimer = null; }, 1000);
+    _stderrIdleTimer = setTimeout(() => {
+      _stderrEl = null;
+      _stderrIdleTimer = null;
+      _stderrLineCount = 0;
+    }, STDERR_IDLE_MS);
   }
 
   function appendError(message) {
