@@ -79,9 +79,29 @@
   --type-title:  var(--fw-bold)     var(--fs-xl)/var(--lh-tight)      var(--font-ui);
   --type-2xl:    var(--fw-bold)     var(--fs-2xl)/var(--lh-tight)     var(--font-ui);
   --type-hero:   var(--fw-black)    var(--fs-display)/var(--lh-tight) var(--font-ui);
+
+  /* === Elevation Scale (REDESIGN-3 V3) ===
+     Brand-tinted shadow base lets each theme keep its own ambient color
+     (warm brown for washi, blue-green for coolvibe, sand for editorial).
+     Two-layer shadows (near + far) feel physically lifted at the same
+     GPU cost as a single blur. */
+  --shadow-tint: 45, 31, 20; /* warm theme RGB triple, overridden per theme */
+  --shadow-1: 0 1px 2px rgba(var(--shadow-tint), 0.05),
+              0 2px 6px -2px rgba(var(--shadow-tint), 0.07);
+  --shadow-2: 0 3px 8px -2px rgba(var(--shadow-tint), 0.07),
+              0 8px 18px -6px rgba(var(--shadow-tint), 0.10);
+  --shadow-3: 0 6px 16px -3px rgba(var(--shadow-tint), 0.09),
+              0 14px 32px -10px rgba(var(--shadow-tint), 0.13);
+  --shadow-4: 0 10px 24px -5px rgba(var(--shadow-tint), 0.11),
+              0 22px 44px -12px rgba(var(--shadow-tint), 0.16);
+  --shadow-5: 0 16px 36px -8px rgba(var(--shadow-tint), 0.14),
+              0 32px 64px -16px rgba(var(--shadow-tint), 0.22);
+  --shadow-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  --shadow-inset-hi: inset 0 1px 0 rgba(255, 255, 255, 0.7);
 }
 
 html[data-theme='coolvibe'] {
+  --shadow-tint: 11, 73, 92; /* deep teal — matches accent #0891b2 */
   --bg-primary: #eef7f9;
   --bg-secondary: #f7fbfc;
   --bg-tertiary: #dfeef2;
@@ -326,6 +346,7 @@ html[data-theme='coolvibe'] .theme-card.active {
 }
 
 html[data-theme='editorial'] {
+  --shadow-tint: 60, 40, 20; /* deeper sand brown — matches accent #8b5e3c */
   --bg-primary: #f6f1e8;
   --bg-secondary: #efe8dc;
   --bg-tertiary: #e2d8c7;
@@ -405,7 +426,7 @@ body {
   border-radius: 20px;
   width: 90%;
   max-width: 360px;
-  box-shadow: var(--shadow-strong);
+  box-shadow: var(--shadow-4);
 }
 .login-logo {
   width: 64px; height: 64px;
@@ -1221,6 +1242,7 @@ body.session-loading-active {
   border: 1px solid var(--border-color);
   border-bottom-left-radius: 4px;
   color: var(--text-primary);
+  box-shadow: var(--shadow-1);
 }
 
 /* System messages */
@@ -1853,6 +1875,7 @@ body.session-loading-active {
   border: 1px solid var(--border-color);
   border-radius: 10px;
   overflow: hidden;
+  box-shadow: var(--shadow-1);
 }
 .tool-call.codex-command {
   border-color: rgba(91, 126, 161, 0.24);
@@ -2371,7 +2394,7 @@ body.session-loading-active {
   background: #fff;
   border: 1px solid var(--border-color);
   border-radius: 14px;
-  box-shadow: 0 8px 32px rgba(45, 31, 20, 0.15);
+  box-shadow: var(--shadow-3), var(--shadow-inset-hi);
   padding: 16px;
   min-width: 280px;
   max-width: 380px;
@@ -3059,7 +3082,7 @@ html[data-theme='coolvibe'] .settings-back:hover {
   border-radius: 16px;
   width: 100%;
   max-width: 420px;
-  box-shadow: 0 8px 32px rgba(45,31,20,0.15);
+  box-shadow: var(--shadow-5);
   display: flex;
   flex-direction: column;
   max-height: 90vh;
