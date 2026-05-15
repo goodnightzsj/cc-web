@@ -1632,6 +1632,11 @@
         break;
 
       case 'text_delta':
+        // Cross-session isolation (loop2-12): drop in-flight deltas that
+        // belong to a previous session. Server detaches old ws on switch
+        // but RTT-window deltas can still arrive and would otherwise leak
+        // into the new session's view, polluting pendingText / streaming bubble.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         if (!isGenerating) startGenerating();
         pendingText += msg.text;
         recordStreamSample(msg.text || '');
@@ -1639,6 +1644,7 @@
         break;
 
       case 'thinking_delta':
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
         if (!isGenerating) startGenerating();
         pendingThinking += msg.text || '';
         recordStreamSample(msg.text || '');
