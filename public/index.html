@@ -69,7 +69,7 @@
           <button type="button" class="chat-agent-option active" data-agent="claude">Claude</button>
           <button type="button" class="chat-agent-option" data-agent="codex">Codex</button>
         </div>
-        <span id="chat-runtime-state" class="chat-runtime-state" hidden>运行中</span>
+        <span id="chat-runtime-state" class="chat-runtime-state" aria-live="polite" aria-atomic="true" hidden>运行中</span>
         <span id="chat-cwd" class="chat-cwd" hidden></span>
         <button id="mode-select" class="mode-pill" type="button" data-mode="yolo" title="权限模式" aria-haspopup="menu" aria-expanded="false">
           <span class="mode-pill-dot"></span><span class="mode-pill-label">YOLO</span>
@@ -129,6 +129,8 @@
           </button>
         </div>
       </div>
+      <!-- R21: WCAG 4.1.3 Status Messages — polite live region for AI completion -->
+      <div id="chat-announce" class="sr-only" aria-live="polite" aria-atomic="true"></div>
     </main>
   </div>
 
@@ -145,6 +147,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="app.c89ccddf48.js"></script>
+  <script src="app.89c97ffe85.js"></script>
 </body>
 </html>

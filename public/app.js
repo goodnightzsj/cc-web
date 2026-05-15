@@ -136,6 +136,7 @@
   const abortBtn = $('#abort-btn');
   const cmdMenu = $('#cmd-menu');
   const modeSelect = $('#mode-select');
+  const chatAnnounce = $('#chat-announce');
 
   // --- Viewport height fix for mobile browsers ---
   function setVH() {
@@ -2013,6 +2014,12 @@
     setCurrentSessionRunningState(false);
     stopStreamRate();
     msgInput.focus();
+    // R21: WCAG 4.1.3 Status Messages — announce completion exactly once per turn.
+    // Clear-then-set with microdelay so SR re-reads even if last text was identical.
+    if (chatAnnounce) {
+      chatAnnounce.textContent = '';
+      setTimeout(() => { chatAnnounce.textContent = '回复已完成'; }, 50);
+    }
 
     if (pendingText) flushRender();
 
