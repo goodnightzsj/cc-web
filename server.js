@@ -3958,6 +3958,58 @@ function isInterruptUserEvent(event) {
   return blk && blk.type === 'text' && (blk.text || '').trim() === TAIL_INTERRUPT_TEXT;
 }
 
+// R62: strip ANSI SGR escape sequences (`\x1B[...m`) from CLI-captured strings
+// so e.g. `Set model to [1mOpus 4.7[22m with [1mmax[22m effort` becomes
+// readable plain text. CLI piggy-backs on terminal bold/color codes but the
+// browser renders them as garbage. Conservative regex — only consumes SGR
+// sequences (the only kind CLI actually emits in jsonl content fields).
+function stripAnsi(s) {
+  if (typeof s !== 'string') return s;
+  // ESC `[` <params> m  → SGR; also handle the bare `[1m` form some CLIs emit
+  // when the ESC byte gets dropped during JSON serialization.
+  return s
+    .replace(/\x1B\[[0-9;]*m/g, '')
+    .replace(/\[(?:[0-9]{1,3})(?:;[0-9]{1,3})*m/g, '');
+}
+
+// R62: jsonl wraps slash-command invocations in three sequential markers.
+// Detect and unpack so the modal renders a friendly card instead of raw XML.
+//
+//   {type:'user',  content:"<command-name>/model</command-name>\n
+//                            <command-message>model</command-message>\n
+//                            <command-args></command-args>"}
+//   {type:'system', subtype:'local_command',
+//                  content:"<local-command-stdout>Set model to ...</local-command-stdout>"}
+//
+// The CLI also emits `<local-command-caveat>...</local-command-caveat>` as
+// an isMeta:true user event — purely internal scaffolding, must be hidden.
+function parseSlashCommand(content) {
+  if (typeof content !== 'string') return null;
+  if (!content.includes('<command-name>')) return null;
+  const nameMatch = content.match(/<command-name>([^<]*)<\/command-name>/);
+  const msgMatch = content.match(/<command-message>([^<]*)<\/command-message>/);
+  const argsMatch = content.match(/<command-args>([^<]*)<\/command-args>/);
+  if (!nameMatch) return null;
+  return {
+    name: (nameMatch[1] || '').trim(),
+    message: (msgMatch?.[1] || '').trim(),
+    args: (argsMatch?.[1] || '').trim(),
+  };
+}
+function parseLocalCommandStdout(content) {
+  if (typeof content !== 'string') return null;
+  const stdoutMatch = content.match(/<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/);
+  const stderrMatch = content.match(/<local-command-stderr>([\s\S]*?)<\/local-command-stderr>/);
+  if (!stdoutMatch && !stderrMatch) return null;
+  return {
+    stdout: stripAnsi((stdoutMatch?.[1] || '').trim()),
+    stderr: stripAnsi((stderrMatch?.[1] || '').trim()),
+  };
+}
+function isLocalCommandCaveat(content) {
+  return typeof content === 'string' && content.includes('<local-command-caveat>');
+}
+
 function processTailEvent(event, pseudoEntry, ws, sessionId) {
   if (!event || !event.type) return;
   if (event.type === 'user') {
@@ -3984,13 +4036,34 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
       return;
     }
     const raw = event.message?.content;
+    // R62: drop the CLI's internal `<local-command-caveat>` meta-rows — they
+    // are not for the user to see and were polluting the transcript.
+    if (typeof raw === 'string' && isLocalCommandCaveat(raw)) return;
+    if (event.isMeta) return;
+
+    // R62: a slash-command invocation arrives as a wrapped user row. Render
+    // it as a friendly system bubble instead of dumping the raw XML.
+    if (typeof raw === 'string') {
+      const slash = parseSlashCommand(raw);
+      if (slash) {
+        wsSend(ws, {
+          type: 'system_message',
+          sessionId,
+          kind: 'slash-command',
+          message: `已执行 /${slash.name.replace(/^\//, '')}${slash.args ? ' ' + slash.args : ''}`,
+          slashCommand: slash,
+        });
+        return;
+      }
+    }
+
     let text = '';
     if (typeof raw === 'string') text = raw;
     else if (Array.isArray(raw)) {
       text = raw.filter(b => b && b.type === 'text').map(b => b.text || '').join('');
     }
     if (text.trim()) {
-      wsSend(ws, { type: 'tail_user_message', text, sessionId, ts: event.timestamp || null });
+      wsSend(ws, { type: 'tail_user_message', text: stripAnsi(text), sessionId, ts: event.timestamp || null });
     }
     // Defer to processClaudeEvent so tool_result blocks update existing
     // tool chips through R51's processToolResultBlock.
@@ -4009,6 +4082,183 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
       wsSend(ws, { type: 'done', sessionId, costUsd: null });
     }
     return;
+  }
+  // R62: system subtypes the CLI surfaces but R57 was silently dropping.
+  // All routed through system_message kinds that the client already knows
+  // how to render (with new kinds added below for the brand-new ones).
+  if (event.type === 'system') {
+    const sub = event.subtype;
+    if (sub === 'local_command') {
+      const parsed = parseLocalCommandStdout(event.content || '');
+      if (parsed && (parsed.stdout || parsed.stderr)) {
+        wsSend(ws, {
+          type: 'system_message',
+          sessionId,
+          kind: 'command-output',
+          message: parsed.stdout || parsed.stderr,
+          isError: !parsed.stdout && !!parsed.stderr,
+        });
+      }
+      return;
+    }
+    if (sub === 'away_summary' && event.content) {
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'away-summary',
+        message: String(event.content),
+      });
+      return;
+    }
+    if (sub === 'api_error') {
+      const err = event.error || {};
+      const retryMs = event.retryInMs ? Math.round(event.retryInMs) : null;
+      const attempt = event.retryAttempt || null;
+      const max = event.maxRetries || null;
+      const parts = [];
+      parts.push(`Anthropic API 错误：HTTP ${err.status || '??'}`);
+      if (attempt && max) parts.push(`第 ${attempt}/${max} 次重试`);
+      if (retryMs) parts.push(`${retryMs}ms 后再试`);
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'error',
+        errorClass: err.status === 429 ? 'rate-limit' : (err.status >= 500 ? 'overload' : 'unknown'),
+        message: parts.join(' · '),
+      });
+      return;
+    }
+    if (sub === 'compact_boundary') {
+      // The richer compact_summary case is already handled by
+      // processClaudeEvent; the boundary marker is just a visual divider.
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'compact-boundary',
+        message: '——— /compact 边界 ———',
+      });
+      return;
+    }
+    if (sub === 'turn_duration') {
+      // Compact metadata chip; CLI shows this on completion line.
+      const ms = event.durationMs || 0;
+      const seconds = ms / 1000;
+      const fmt = seconds < 60
+        ? `${seconds.toFixed(1)}s`
+        : `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+      const count = event.messageCount || 0;
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'turn-duration',
+        message: `本回合耗时 ${fmt}${count ? `（${count} 条消息）` : ''}`,
+      });
+      return;
+    }
+    if (sub === 'stop_hook_summary' && Array.isArray(event.hookErrors) && event.hookErrors.length > 0) {
+      // Stop hooks fire after every turn; silent when successful. Surface
+      // only the error case so the user knows their hook is broken.
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'hook',
+        hookEvent: 'Stop',
+        message: 'Stop 钩子执行失败：' + event.hookErrors.map(e => String(e?.message || e)).join('; '),
+      });
+      return;
+    }
+    if (sub === 'informational' && event.content) {
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'info',
+        message: String(event.content),
+      });
+      return;
+    }
+    // R63: cron/scheduled jobs firing — CLI displays a line like
+    // "Claude resuming /loop wakeup (Apr 29 11:10pm)" but cc-web was silent.
+    if (sub === 'scheduled_task_fire' && event.content) {
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'scheduled-task',
+        message: String(event.content),
+      });
+      return;
+    }
+    // Defer remaining subtypes (init / compact_summary / hook_response /
+    // model_fallback / context_warning) to processClaudeEvent's case 'system'.
+  }
+  // R63: permission-mode toggle from CLI side. The jsonl writes a top-level
+  // row whenever the operator hits Shift+Tab; cc-web should sync the header
+  // mode-pill instead of stale data. Idempotent — drop dupes to avoid spam.
+  if (event.type === 'permission-mode' && event.permissionMode) {
+    if (pseudoEntry.lastPermissionMode !== event.permissionMode) {
+      pseudoEntry.lastPermissionMode = event.permissionMode;
+      wsSend(ws, {
+        type: 'permission_mode_changed',
+        sessionId,
+        permissionMode: event.permissionMode,
+      });
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'info',
+        message: `权限模式已切换为 ${event.permissionMode}`,
+      });
+    }
+    return;
+  }
+  // R63: MCP / deferred tool list changes. The CLI emits these whenever a
+  // plugin advertises new/removed tools; without surfacing them the user
+  // doesn't know why "/help" suddenly knows about something new.
+  if (event.type === 'attachment' && event.attachment?.type === 'deferred_tools_delta') {
+    const added = Array.isArray(event.attachment.addedNames) ? event.attachment.addedNames : [];
+    const removed = Array.isArray(event.attachment.removedNames) ? event.attachment.removedNames : [];
+    if (added.length || removed.length) {
+      const parts = [];
+      if (added.length) parts.push(`新增 ${added.length} 个工具`);
+      if (removed.length) parts.push(`移除 ${removed.length} 个工具`);
+      const detail = added.length ? added.slice(0, 8).join(', ') + (added.length > 8 ? ` 等 ${added.length} 项` : '') : '';
+      wsSend(ws, {
+        type: 'system_message',
+        sessionId,
+        kind: 'info',
+        message: parts.join(' · ') + (detail ? `：${detail}` : ''),
+      });
+    }
+    return;
+  }
+  // R63: CLI auto-generated session title. tail-mode owner is the live CLI,
+  // so cc-web should mirror its rename into local session.title rather than
+  // keep the original first-user-message snippet.
+  if (event.type === 'ai-title' && event.message?.title) {
+    try {
+      const sess = loadSession(sessionId);
+      if (sess) {
+        sess.title = String(event.message.title).slice(0, 80);
+        saveSession(sess);
+        wsSend(ws, {
+          type: 'session_meta_updated',
+          sessionId,
+          title: sess.title,
+        });
+        sendSessionList(ws);
+      }
+    } catch {}
+    return;
+  }
+  // R63: branch hint for the chat header. Every assistant/system jsonl row
+  // carries the cwd's git branch at that moment; reflecting changes mirrors
+  // what the CLI's status line shows.
+  if (event.gitBranch && typeof event.gitBranch === 'string' && pseudoEntry.lastGitBranch !== event.gitBranch) {
+    pseudoEntry.lastGitBranch = event.gitBranch;
+    wsSend(ws, {
+      type: 'git_branch_changed',
+      sessionId,
+      gitBranch: event.gitBranch,
+    });
   }
   processClaudeEvent(pseudoEntry, event, sessionId);
 }

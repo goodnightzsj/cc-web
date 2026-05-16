@@ -1775,6 +1775,117 @@ body.session-loading-active {
   opacity: 0.7;
   margin-bottom: var(--space-2);
 }
+/* ============ R62 — new system-message kinds from jsonl tail ============ */
+.msg.system[data-kind="slash-command"] .msg-bubble {
+  border-left: 3px solid var(--info);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+  color: color-mix(in srgb, var(--info) 80%, var(--text-primary));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-sm);
+}
+.msg.system[data-kind="slash-command"] .msg-bubble::before {
+  content: '⌘ slash command';
+  display: block;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  opacity: 0.7;
+  margin-bottom: var(--space-2);
+}
+.msg.system[data-kind="command-output"] .msg-bubble {
+  border-left: 3px solid var(--neutral-500);
+  background: color-mix(in srgb, var(--neutral-500) 6%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--fs-xs);
+  white-space: pre-wrap;
+}
+.msg.system[data-kind="command-output"] .msg-bubble::before {
+  content: '↪ command output';
+  display: block;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  opacity: 0.6;
+  margin-bottom: var(--space-2);
+  font-family: var(--font-ui);
+}
+.msg.system[data-kind="away-summary"] .msg-bubble {
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: var(--text-primary);
+  font-style: italic;
+}
+.msg.system[data-kind="away-summary"] .msg-bubble::before {
+  content: '⌂ 上次到哪了';
+  display: block;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  opacity: 0.75;
+  margin-bottom: var(--space-2);
+  font-style: normal;
+  color: var(--accent);
+}
+.msg.system[data-kind="compact-boundary"] .msg-bubble {
+  border-left: 3px solid var(--warning);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-wide);
+}
+.msg.system[data-kind="turn-duration"] .msg-bubble {
+  border-left: 3px solid var(--neutral-500);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-wide);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+.msg.system[data-kind="info"] .msg-bubble {
+  border-left: 3px solid var(--info);
+  background: color-mix(in srgb, var(--info) 6%, transparent);
+  color: color-mix(in srgb, var(--info) 75%, var(--text-primary));
+}
+.msg.system[data-kind="scheduled-task"] .msg-bubble {
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  color: color-mix(in srgb, var(--accent) 80%, var(--text-primary));
+}
+.msg.system[data-kind="scheduled-task"] .msg-bubble::before {
+  content: '⏰ 定时触发';
+  display: block;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  opacity: 0.75;
+  margin-bottom: var(--space-2);
+  color: var(--accent);
+}
+
+/* R63: git branch chip in chat header — same shape as ssh-host-badge. */
+.git-branch-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-3);
+  margin-left: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font: var(--fw-semibold) var(--fs-xs)/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: var(--ls-wide);
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: help;
+}
+@media (max-width: 480px) {
+  .git-branch-badge { max-width: 100px; }
+}
+
 .msg.system[data-kind="attachments-dropped"] .msg-bubble {
   border-left: 3px solid var(--warning);
   background: color-mix(in srgb, var(--warning) 10%, transparent);

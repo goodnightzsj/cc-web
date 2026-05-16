@@ -133,6 +133,15 @@
   const chatCwd = $('#chat-cwd');
   const sshHostBadge = $('#ssh-host-badge');
   const tailToggleBtn = $('#tail-toggle');
+  const gitBranchBadge = $('#git-branch-badge');
+  function updateGitBranchBadge(branch) {
+    if (!gitBranchBadge) return;
+    const b = (branch || '').trim();
+    if (!b || b === 'HEAD') { gitBranchBadge.hidden = true; gitBranchBadge.textContent = ''; return; }
+    gitBranchBadge.hidden = false;
+    gitBranchBadge.textContent = '⎇ ' + b;
+    gitBranchBadge.title = '当前 cwd 的 Git 分支：' + b;
+  }
   let tailing = false;
   let canTailExternal = false;
   const costDisplay = $('#cost-display');
@@ -2368,6 +2377,33 @@
         }
         break;
 
+      case 'permission_mode_changed':
+        // R63: CLI side toggled Shift+Tab — sync the header mode-pill.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        if (msg.permissionMode) {
+          // Map CLI's permissionMode (bypassPermissions/default/plan) to local pill keys.
+          const cliToLocal = { bypassPermissions: 'yolo', default: 'default', plan: 'plan', acceptEdits: 'yolo' };
+          const local = cliToLocal[msg.permissionMode] || msg.permissionMode;
+          currentMode = local;
+          setModeSelectUI(local);
+        }
+        break;
+
+      case 'session_meta_updated':
+        // R63: CLI generated an ai-title — refresh chat title + sidebar entry.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        if (msg.title) {
+          if (chatTitle) chatTitle.textContent = msg.title;
+          updateCachedSession(currentSessionId, (snap) => { snap.title = msg.title; });
+        }
+        break;
+
+      case 'git_branch_changed':
+        // R63: header surfaces the cwd's branch when tail sees a switch.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        updateGitBranchBadge(msg.gitBranch || '');
+        break;
+
       case 'usage_detail':
         // R40: rich per-turn metrics from CLI 'result' event. Drives ctx-meter.
         if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
@@ -2554,7 +2590,22 @@
     inputChars: 0,
     inProgressTodo: '',
     direction: 'down', // 'down' = output streaming, 'up' = thinking/no-text
+    idleVibeIdx: 0,
+    lastVibeRotateAt: 0,
   };
+  // R62: CLI cycles through ~50 playful idle verbs (Photosynthesizing,
+  // Vibing, Cogitating, Brewing, etc.) when the model has no surface text
+  // yet. These never enter jsonl — pure CLI-terminal cosmetics. cc-web in
+  // tail mode therefore CANNOT mirror exactly which word the CLI is showing
+  // at any instant; we run our own rotation so the heartbeat bar still
+  // feels alive instead of stuck on a static "Spinning…".
+  const IDLE_VIBES = [
+    'Spinning', 'Pondering', 'Cogitating', 'Brewing', 'Vibing',
+    'Mulling', 'Stewing', 'Crystallizing', 'Fermenting', 'Percolating',
+    'Photosynthesizing', 'Reticulating', 'Whisking', 'Tessellating',
+    'Refactoring thoughts', 'Aligning neurons', 'Untangling logic',
+    'Calibrating',
+  ];
   function hbFormatTime(ms) {
     if (ms < 1000) return '0s';
     const s = Math.floor(ms / 1000);
@@ -2581,12 +2632,24 @@
   }
   function hbTick() {
     if (!isGenerating) return;
-    const elapsed = Date.now() - heartbeat.turnStartAt;
+    const now = Date.now();
+    const elapsed = now - heartbeat.turnStartAt;
     hbTimeEl.textContent = hbFormatTime(elapsed);
     const arrow = heartbeat.direction === 'up' ? '↑' : '↓';
     const chars = heartbeat.direction === 'up' ? heartbeat.inputChars : heartbeat.outputChars;
     const tokStr = hbFormatTokens(chars);
     hbFlowEl.textContent = tokStr ? `${arrow} ${tokStr}` : '';
+    // Rotate the idle vibe every 5s when the action is still the bare placeholder
+    // (model is reasoning but hasn't produced any text yet) — matches CLI rhythm.
+    if (heartbeat.actionRaw === 'Spinning…' || IDLE_VIBES.some(v => heartbeat.actionRaw === v + '…')) {
+      if (now - heartbeat.lastVibeRotateAt > 5000) {
+        heartbeat.lastVibeRotateAt = now;
+        heartbeat.idleVibeIdx = (heartbeat.idleVibeIdx + 1) % IDLE_VIBES.length;
+        const word = IDLE_VIBES[heartbeat.idleVibeIdx] + '…';
+        heartbeat.actionRaw = word;
+        hbActionEl.textContent = word;
+      }
+    }
   }
   function hbStart() {
     heartbeat.turnStartAt = Date.now();
