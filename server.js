@@ -2945,12 +2945,16 @@ function handleLoadSession(ws, sessionId) {
   if (!session) {
     return wsSend(ws, { type: 'error', message: 'Session not found' });
   }
-  // R63: stop any tail still attached to this ws — the client already
-  // dropped subsequent tail events for the previous session via the
-  // sessionId guard, but the server kept polling the old jsonl every
-  // 500ms. Cleanup here mirrors handleDisconnect's tail tear-down.
+  // R63 + R74: stop the tail only when the user actually switches to a
+  // different sessionId. The prior unconditional stop killed the tail on
+  // every load_session, including ws-reconnect / page-refresh / same-
+  // session-reload — which is exactly the "实时监控会自动取消" bug the
+  // user reported.
   const prevTail = externalTails.get(ws);
-  if (prevTail) { prevTail.stop(); externalTails.delete(ws); }
+  if (prevTail && prevTail.sessionId !== sessionId) {
+    prevTail.stop();
+    externalTails.delete(ws);
+  }
   // R68: drop any cached older-history chunks queued for the previous
   // session; the new session will repopulate the cache below.
   wsHistoryCache.delete(ws);
@@ -4423,6 +4427,11 @@ function startTailFor(ws, sessionId, filePath, { reason = 'manual' } = {}) {
     },
     onOffsetAdvance: saveOffset,
   });
+  // R74: remember which sessionId this tail is watching so handleLoadSession
+  // can skip the stop when the user (re)loads the same session — previously
+  // any load_session unconditionally killed the tail, so a ws reconnect or
+  // session refresh silently terminated the operator's 🔭 monitor.
+  tail.sessionId = sessionId;
   externalTails.set(ws, tail);
   const resumedFrom = resumeOffset !== null ? resumeOffset : null;
   // R71: classify the attach moment so client banner can be honest about
