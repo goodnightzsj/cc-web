@@ -27,7 +27,11 @@
   --header-height: 52px;
   --input-max-height: 200px;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans CJK SC', Roboto, sans-serif;
+  /* R56: Simplified-Chinese font fallback order. 'Hiragino Sans' (日文) used to
+   * be listed before 'Noto Sans CJK SC' (简中)，导致 macOS 上「骨/直/真/強/綠」等
+   * 字按日文字形渲染。改为简中优先：PingFang SC (macOS) / Hiragino Sans GB
+   * (macOS 简中)  / Microsoft YaHei (Windows) / Noto Sans CJK SC (Linux fallback). */
+  --font-ui: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Hiragino Sans GB', 'Noto Sans CJK SC', 'Segoe UI', Roboto, sans-serif;
   --page-background: #faf6f0;
   --login-background: linear-gradient(135deg, #faf6f0 0%, #f0e8dc 50%, #e8dccf 100%);
   --surface-strong: #fff;
