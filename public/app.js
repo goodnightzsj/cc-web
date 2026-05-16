@@ -1444,11 +1444,31 @@
     if (chatAgentBtn) chatAgentBtn.setAttribute('aria-expanded', 'false');
   }
 
+  // R67: anchor a fixed-positioned dropdown under its trigger, right-aligned
+  // to the trigger's right edge. Replaces the old CSS-only `right:N px`
+  // hack that broke whenever header items got added/removed and shifted x.
+  function anchorMenuToTrigger(menu, trigger, options = {}) {
+    if (!menu || !trigger) return;
+    const offset = options.offset ?? 4;
+    const r = trigger.getBoundingClientRect();
+    // Must measure menu width AFTER it's visible — caller toggles `hidden`
+    // off first, then calls this.
+    const menuWidth = menu.offsetWidth || 180;
+    let left = r.right - menuWidth;
+    // Clamp inside viewport with 8px margin to avoid edge-clipping on
+    // narrow windows.
+    if (left < 8) left = 8;
+    if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+    menu.style.top = (r.bottom + offset) + 'px';
+    menu.style.left = left + 'px';
+  }
+
   function toggleAgentMenu() {
     if (!chatAgentMenu || !chatAgentBtn) return;
     const willOpen = chatAgentMenu.hidden;
     chatAgentMenu.hidden = !willOpen;
     chatAgentBtn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) anchorMenuToTrigger(chatAgentMenu, chatAgentBtn);
   }
 
   function resetChatView(agent) {
@@ -5096,6 +5116,7 @@
     const willOpen = modeMenu.hidden;
     modeMenu.hidden = !willOpen;
     modeSelect.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    if (willOpen) anchorMenuToTrigger(modeMenu, modeSelect);
   }
   setModeSelectUI(currentMode);
   modeSelect.addEventListener('click', (e) => {

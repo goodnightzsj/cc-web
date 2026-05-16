@@ -1016,9 +1016,14 @@ body.session-loading-active {
   background: #f1dfd7;
 }
 .chat-agent-menu {
-  position: absolute;
-  top: calc(100% - 6px);
-  right: 16px;
+  /* R67: position is set in JS via getBoundingClientRect on the trigger so the
+     menu stays anchored under the chat-agent button even after header items
+     get added/removed (git-branch-badge, ssh-host-badge, etc. shift the
+     button's x). Falls back to top:48px to avoid a flash at 0,0 on first
+     paint before the JS sets fixed coords. */
+  position: fixed;
+  top: 48px;
+  left: 16px;
   min-width: 148px;
   padding: var(--space-4);
   border: 1px solid var(--border-color);
@@ -1181,9 +1186,12 @@ body.session-loading-active {
 }
 
 .mode-menu {
-  position: absolute;
-  top: calc(var(--header-height, 52px) - 4px);
-  right: 64px;
+  /* R67: JS-positioned via getBoundingClientRect; the previous right:64px
+     assumed a fixed number of header items to its right and broke whenever
+     a new chip (git-branch-badge, etc.) shifted layout. */
+  position: fixed;
+  top: 48px;
+  left: 16px;
   min-width: 180px;
   padding: var(--space-4);
   border: 1px solid var(--border-color);

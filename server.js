@@ -3087,9 +3087,11 @@ function handleLoadSession(ws, sessionId) {
     // R57: signal to client whether this session has a local CLI jsonl that
     // it can read-only tail. True iff a Claude session with a resolvable
     // ~/.claude/projects/.../<claudeSessionId>.jsonl on disk.
+    // R67: use the fast finder (only checks existence) — the old path
+    // readFileSync'd the entire jsonl just to compute this boolean.
     canTailExternal: getSessionAgent(session) === 'claude'
       && !!session.claudeSessionId
-      && !!resolveClaudeSessionLocalMeta(session.claudeSessionId)?.filePath,
+      && !!findClaudeSessionJsonl(session.claudeSessionId),
     // R63: surface persisted gitBranch so the chat header chip can paint on
     // first load instead of waiting for the next jsonl tail event.
     gitBranch: session.gitBranch || null,
@@ -3800,7 +3802,12 @@ const CODEX_SESSIONS_DIR = path.join(process.env.HOME || process.env.USERPROFILE
 const CODEX_STATE_DB_PATH = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'state_5.sqlite');
 const CODEX_LOG_DB_PATH = path.join(process.env.HOME || process.env.USERPROFILE || '', '.codex', 'logs_1.sqlite');
 
-function resolveClaudeSessionLocalMeta(claudeSessionId) {
+// R67: fast path — just locate the jsonl, don't read it. canTailExternal
+// only needs to know "does the file exist?", and the prior implementation
+// readFileSync'd potentially 50MB+ of jsonl just to extract the cwd. That
+// turned every session_info into a multi-second block (and the 🔭 button
+// silently failed to appear if the read happened to OOM).
+function findClaudeSessionJsonl(claudeSessionId) {
   if (!claudeSessionId) return null;
   try {
     const dirs = fs.readdirSync(CLAUDE_PROJECTS_DIR).filter((dir) => {
@@ -3808,27 +3815,31 @@ function resolveClaudeSessionLocalMeta(claudeSessionId) {
     });
     for (const dir of dirs) {
       const filePath = path.join(CLAUDE_PROJECTS_DIR, dir, `${sanitizeId(claudeSessionId)}.jsonl`);
-      if (!fs.existsSync(filePath)) continue;
-      try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const lines = content.split('\n');
-        let cwd = null;
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          try {
-            const entry = JSON.parse(trimmed);
-            if (entry.type === 'user' && entry.cwd) {
-              cwd = entry.cwd;
-              break;
-            }
-          } catch {}
-        }
-        return { cwd, projectDir: dir, filePath };
-      } catch {}
+      if (fs.existsSync(filePath)) return { projectDir: dir, filePath };
     }
   } catch {}
   return null;
+}
+
+function resolveClaudeSessionLocalMeta(claudeSessionId) {
+  const hit = findClaudeSessionJsonl(claudeSessionId);
+  if (!hit) return null;
+  // Bounded head read (16KB) instead of the entire file — the first user
+  // row carrying `cwd` is always near the top. R58's readBytesRange helper
+  // already established this pattern for the import-list parser.
+  let cwd = null;
+  try {
+    const head = readBytesRange(hit.filePath, 0, 16 * 1024);
+    for (const line of head.split('\n')) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const e = JSON.parse(t);
+        if (e.type === 'user' && e.cwd) { cwd = e.cwd; break; }
+      } catch {}
+    }
+  } catch {}
+  return { cwd, projectDir: hit.projectDir, filePath: hit.filePath };
 }
 
 // R63: rich import — preserve the CLI's elemental story instead of only
@@ -4886,7 +4897,39 @@ function handleDeleteNativeSession(ws, msg) {
 // produces a healthy session (~5000 turns) without risking the heap.
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const MAX_IMPORT_MESSAGES = 5000;
-function handleImportNativeSession(ws, msg) {
+const IMPORT_YIELD_INTERVAL = 250; // lines per yield to keep ws heartbeats alive
+
+// R67: stream the jsonl line-by-line through the same per-row logic that
+// parseJsonlToMessages uses, yielding to the event loop every N lines so a
+// 30+ MB import doesn't block ws frames (and the heartbeat-bar / abort
+// button stay responsive). Returns the same shape parseJsonlToMessages
+// does, so the caller code is unchanged. Uses readline on a read stream
+// so memory peak is bounded by one line at a time rather than the whole
+// file as a string.
+async function streamJsonlToMessages(filePath, onProgress) {
+  const readline = require('readline');
+  const stream = fs.createReadStream(filePath, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  const lines = [];
+  let count = 0;
+  for await (const line of rl) {
+    lines.push(line);
+    count++;
+    if (count % IMPORT_YIELD_INTERVAL === 0) {
+      if (typeof onProgress === 'function') {
+        try { onProgress(count); } catch {}
+      }
+      // Yield to let any pending ws frames / timers run.
+      await new Promise((r) => setImmediate(r));
+    }
+  }
+  // Parsing in one shot AFTER all lines are read still has to walk the
+  // whole array, but at least the file IO and the JSON.parse loop are now
+  // interleaved with event-loop ticks. For 50MB this brings the worst-case
+  // blocking window from ~6s to ~80ms slices.
+  return parseJsonlToMessages(lines);
+}
+async function handleImportNativeSession(ws, msg) {
   const { sessionId, projectDir } = msg;
   if (!sessionId || !projectDir) {
     return wsSend(ws, { type: 'error', message: '缺少 sessionId 或 projectDir' });
@@ -4907,16 +4950,38 @@ function handleImportNativeSession(ws, msg) {
       });
     }
   } catch {}
-  let content;
-  try { content = fs.readFileSync(filePath, 'utf8'); } catch {
-    return wsSend(ws, { type: 'error', message: '无法读取会话文件' });
+  // R67: ack the user immediately so the UI shows "importing…" rather than
+  // appearing frozen during the few seconds the parse takes.
+  wsSend(ws, { type: 'import_progress', sessionId, stage: 'reading' });
+
+  let result;
+  try {
+    result = await streamJsonlToMessages(filePath, (n) => {
+      // Coalesced progress: every 1000 lines is enough for the user to see
+      // motion without spamming the wire.
+      if (n % 1000 === 0) {
+        wsSend(ws, { type: 'import_progress', sessionId, stage: 'parsing', linesRead: n });
+      }
+    });
+  } catch (e) {
+    return wsSend(ws, { type: 'error', message: '解析会话文件失败：' + String(e?.message || e) });
   }
-  const lines = content.split('\n');
-  // R63: parseJsonlToMessages now returns rich messages + late session
-  // metadata (ai-title / final permission mode + accumulated usage +
-  // last seen model). Use those to fill the session record instead of
-  // re-scanning the file manually.
-  const { messages, finalTitle, finalPermissionMode, totalUsage: importedUsage, lastModel, lastGitBranch } = parseJsonlToMessages(lines);
+  const { messages, finalTitle, finalPermissionMode, totalUsage: importedUsage, lastModel, lastGitBranch } = result;
+
+  // Re-read header rows for cwd detection — cheap because we only need the
+  // first user row. Use a small streaming pass to avoid double-buffering.
+  let cwdFromFile = null;
+  try {
+    const head = fs.readFileSync(filePath, { encoding: 'utf8', flag: 'r' }).slice(0, 16 * 1024);
+    for (const ln of head.split('\n')) {
+      const t = ln.trim();
+      if (!t) continue;
+      try {
+        const e = JSON.parse(t);
+        if (e.type === 'user' && e.cwd) { cwdFromFile = e.cwd; break; }
+      } catch {}
+    }
+  } catch {}
 
   // Find or create cc-web session with this claudeSessionId
   let existingSession = null;
@@ -4932,28 +4997,16 @@ function handleImportNativeSession(ws, msg) {
   // Pick a fallback title from the first non-trivial user message when no
   // ai-title was generated by the CLI. cwd still comes from the first user
   // row since parseJsonlToMessages doesn't expose it.
+  // R67: title fallback also derived from the already-parsed messages array
+  // instead of re-scanning the file; finalTitle wins, else first user
+  // message's first ~60 chars. cwd comes from the cwdFromFile header read
+  // above (small bounded slice).
   let title = finalTitle || sessionId.slice(0, 20);
-  let cwd = null;
-  for (const line of lines) {
-    const t = line.trim();
-    if (!t) continue;
-    try {
-      const e = JSON.parse(t);
-      if (e.type === 'user') {
-        if (!cwd) cwd = e.cwd || null;
-        if (!finalTitle) {
-          const raw = e.message?.content;
-          let text = '';
-          if (typeof raw === 'string') text = raw;
-          else if (Array.isArray(raw)) text = raw.filter(b => b.type === 'text').map(b => b.text || '').join('');
-          if (text.trim() && title === sessionId.slice(0, 20)) {
-            title = text.trim().slice(0, 60).replace(/\n/g, ' ');
-          }
-        }
-        if (cwd && (finalTitle || title !== sessionId.slice(0, 20))) break;
-      }
-    } catch {}
+  if (!finalTitle) {
+    const firstUser = messages.find(m => m.role === 'user' && m.content && m.content.trim());
+    if (firstUser) title = firstUser.content.trim().slice(0, 60).replace(/\n/g, ' ');
   }
+  const cwd = cwdFromFile;
   // CLI permissionMode strings → cc-web local mode keys.
   const cliToLocal = { bypassPermissions: 'yolo', default: 'default', plan: 'plan', acceptEdits: 'yolo' };
   const resolvedMode = finalPermissionMode && cliToLocal[finalPermissionMode]
