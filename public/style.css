@@ -2774,13 +2774,47 @@ body.session-loading-active {
   .theme-grid {
     grid-template-columns: 1fr;
   }
+  /* R75: do NOT set `right:` here — anchorMenuToTrigger sets `left` in JS
+     and the prior `right:10px` combined with that left to stretch the menu
+     to ~357px (viewport-wide) on a 375px phone. min-width keeps it usable. */
   .chat-agent-menu {
-    right: 10px;
     min-width: 138px;
   }
   .chat-cwd {
     max-width: 120px;
   }
+  /* R75 — header compaction: chat-title was being squeezed to a few pixels
+     because too many sibling chips (cost / branch / tail-toggle / cwd /
+     agent) all kept their full desktop widths. Strategy: keep agent /
+     mode / menu / tail-toggle / export, hide things the user rarely
+     needs while typing on a phone (cost-display, ssh-host-badge,
+     git-branch-badge, ctx-meter label). chat-title flexes back to fill. */
+  .cost-display { display: none; }
+  .ssh-host-badge { display: none; }
+  .git-branch-badge { display: none; }
+  .stream-rate { display: none; }
+  /* Keep ctx-meter visible but compress to its fill bar (no numeric label). */
+  .ctx-meter-label { display: none; }
+  .ctx-meter { padding: 4px 6px; min-width: 36px; }
+  /* Tail-toggle shrinks to icon-only ("🔭" / "⏹"); the "实时监听" suffix
+     can be reconstructed via title attribute on touch-and-hold or by
+     reading the banner that appears the moment the operator activates it.
+     R75 nit: the base `.tail-toggle` rule uses `font:` shorthand which
+     comes later in source order and would otherwise clobber font-size:0,
+     so we scope with `.chat-header` for higher specificity. */
+  .chat-header .tail-toggle {
+    font-size: 0;
+    padding: 4px 8px;
+    min-width: 32px;
+  }
+  .chat-header .tail-toggle::before {
+    content: '🔭';
+    font-size: var(--fs-base);
+  }
+  .chat-header .tail-toggle[data-active='1']::before { content: '⏹'; }
+  /* Mode-pill keeps label but tighter; the colored dot already encodes mode. */
+  .mode-pill { padding: 4px 8px; }
+  .mode-pill-label { font-size: var(--fs-xs); }
 }
 
 @media (max-width: 480px) {

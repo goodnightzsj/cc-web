@@ -1450,6 +1450,10 @@
   function anchorMenuToTrigger(menu, trigger, options = {}) {
     if (!menu || !trigger) return;
     const offset = options.offset ?? 4;
+    // R75: clear any `right` rule the @media css may have left on before
+    // measuring — otherwise position:fixed with both `left` and `right`
+    // would stretch the menu to the viewport edge.
+    menu.style.right = 'auto';
     const r = trigger.getBoundingClientRect();
     // Must measure menu width AFTER it's visible — caller toggles `hidden`
     // off first, then calls this.
