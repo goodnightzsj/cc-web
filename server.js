@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { spawn, spawnSync } = require('child_process');
 const { WebSocketServer } = require('ws');
 const { createAgentRuntime } = require('./lib/agent-runtime');
+const { createTail: createCliTail } = require('./lib/cli-tail');
 const { createCodexRolloutStore } = require('./lib/codex-rollouts');
 
 // Load .env
@@ -2172,6 +2173,13 @@ wss.on('connection', (ws, req) => {
       case 'import_native_session':
         handleImportNativeSession(ws, msg);
         break;
+      case 'attach_tail':
+        // R57: read-only attach to a CLI-owned session jsonl
+        handleAttachTail(ws, msg);
+        break;
+      case 'detach_tail':
+        handleDetachTail(ws);
+        break;
       case 'list_codex_sessions':
         handleListCodexSessions(ws);
         break;
@@ -3067,6 +3075,12 @@ function handleLoadSession(ws, sessionId) {
     taskMode: session.taskMode || 'local',
     sshHostId: session.sshHostId || '',
     remoteCwd: session.remoteCwd || '',
+    // R57: signal to client whether this session has a local CLI jsonl that
+    // it can read-only tail. True iff a Claude session with a resolvable
+    // ~/.claude/projects/.../<claudeSessionId>.jsonl on disk.
+    canTailExternal: getSessionAgent(session) === 'claude'
+      && !!session.claudeSessionId
+      && !!resolveClaudeSessionLocalMeta(session.claudeSessionId)?.filePath,
   });
 
   if (olderChunks.length > 0) {
@@ -3239,6 +3253,9 @@ function handleDisconnect(ws, wsId) {
     }
   }
   wsSessionMap.delete(ws);
+  // R57: stop any read-only CLI tail still attached to this ws.
+  const tail = externalTails.get(ws);
+  if (tail) { tail.stop(); externalTails.delete(ws); }
   plog('INFO', 'ws_disconnect', { wsId, activeProcessesAffected: affectedSessions });
 }
 
@@ -3861,6 +3878,70 @@ function getImportedSessionIds() {
     }
   } catch {}
   return imported;
+}
+
+// R57: per-ws tail handles. One active tail at a time per socket; reattach
+// stops the previous. Cleaned up in handleDisconnect.
+const externalTails = new Map();
+
+function handleAttachTail(ws, msg) {
+  const sessionId = msg?.sessionId;
+  if (!sessionId) { wsSend(ws, { type: 'tail_error', message: '缺少 sessionId' }); return; }
+  const session = loadSession(sessionId);
+  if (!session) { wsSend(ws, { type: 'tail_error', message: '会话不存在' }); return; }
+  if (getSessionAgent(session) !== 'claude' || !session.claudeSessionId) {
+    wsSend(ws, { type: 'tail_error', message: '当前仅支持 Claude 原生会话的实时监听' });
+    return;
+  }
+  const meta = resolveClaudeSessionLocalMeta(session.claudeSessionId);
+  if (!meta?.filePath) {
+    wsSend(ws, { type: 'tail_error', message: '找不到本地 jsonl 文件（CLI 进程可能未启动或文件已删除）' });
+    return;
+  }
+  // Stop any previous tail for this ws.
+  const prev = externalTails.get(ws);
+  if (prev) prev.stop();
+
+  // Pseudo entry so processClaudeEvent can dispatch its usual events through
+  // wsSend. NOT registered in activeProcesses — abort/send_message are inert.
+  // wsSendR's R33 persistence path is keyed off entry.sessionId + loadSession,
+  // and we explicitly want the live CLI process to remain the sole writer of
+  // session.messages, so we set sessionId = null to bypass R33's persistence
+  // branch. The browser still gets the live events.
+  const pseudoEntry = {
+    pid: -1,
+    ws,
+    sessionId: null,           // disables wsSendR R33 persistence
+    agent: 'claude',
+    fullText: '',
+    fullThinking: '',
+    toolCalls: [],
+    lastCost: null,
+    lastUsage: null,
+    lastError: null,
+    errorSent: false,
+    external: true,
+  };
+
+  const tail = createCliTail({
+    jsonlPath: meta.filePath,
+    onEvent(event) {
+      try { processClaudeEvent(pseudoEntry, event, sessionId); } catch (e) { plog?.('WARN', 'tail_dispatch_err', { err: String(e?.message || e) }); }
+    },
+    onError(err) {
+      wsSend(ws, { type: 'tail_error', message: String(err?.message || err) });
+    },
+  });
+  externalTails.set(ws, tail);
+  wsSend(ws, { type: 'tail_started', sessionId, jsonlPath: meta.filePath });
+  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: meta.filePath });
+}
+
+function handleDetachTail(ws) {
+  const tail = externalTails.get(ws);
+  if (tail) tail.stop();
+  externalTails.delete(ws);
+  wsSend(ws, { type: 'tail_stopped' });
 }
 
 function handleListNativeSessions(ws) {

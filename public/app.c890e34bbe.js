@@ -132,6 +132,9 @@
   const chatRuntimeState = $('#chat-runtime-state');
   const chatCwd = $('#chat-cwd');
   const sshHostBadge = $('#ssh-host-badge');
+  const tailToggleBtn = $('#tail-toggle');
+  let tailing = false;
+  let canTailExternal = false;
   const costDisplay = $('#cost-display');
   const attachmentTray = $('#attachment-tray');
   const imageUploadInput = $('#image-upload-input');
@@ -1004,6 +1007,7 @@
       taskMode: payload.taskMode || 'local',
       sshHostId: payload.sshHostId || '',
       remoteCwd: payload.remoteCwd || '',
+      canTailExternal: !!payload.canTailExternal,
     };
   }
 
@@ -1448,6 +1452,10 @@
     currentTaskMode = 'local';
     currentSshHostId = '';
     currentRemoteCwd = '';
+    // R57: tail reset
+    canTailExternal = false;
+    if (tailing) stopTailUi();
+    updateTailToggleVisibility();
     currentModel = currentAgent === 'claude' ? 'opus' : '';
     isGenerating = false;
     pendingText = '';
@@ -1492,6 +1500,10 @@
     currentTaskMode = snapshot.taskMode || 'local';
     currentSshHostId = snapshot.sshHostId || '';
     currentRemoteCwd = snapshot.remoteCwd || '';
+    // R57: tail-toggle visibility — only sessions with a local CLI jsonl can be tailed
+    canTailExternal = !!snapshot.canTailExternal;
+    if (tailing) stopTailUi(); // session switched while tailing → stop
+    updateTailToggleVisibility();
     updateCwdBadge();
     if (snapshot.mode && MODE_LABELS[snapshot.mode]) {
       currentMode = snapshot.mode;
@@ -1759,6 +1771,60 @@
       e.stopPropagation();
       if (ctxPopover.hidden) openCtxPopover();
       else closeCtxPopover();
+    });
+  }
+
+  // R57: read-only tail attach / detach. Lets cc-web mirror an externally-
+  // running `claude` CLI session by tailing its ~/.claude/projects/*.jsonl.
+  function updateTailToggleVisibility() {
+    if (!tailToggleBtn) return;
+    tailToggleBtn.hidden = !canTailExternal;
+    tailToggleBtn.setAttribute('aria-pressed', tailing ? 'true' : 'false');
+    tailToggleBtn.dataset.active = tailing ? '1' : '0';
+    tailToggleBtn.textContent = tailing ? '⏹ 停止监听' : '🔭 实时监听';
+  }
+  function startTailUi() {
+    tailing = true;
+    document.body.classList.add('tail-mode-active');
+    if (msgInput) msgInput.disabled = true;
+    if (sendBtn) sendBtn.disabled = true;
+    if (attachBtn) attachBtn.disabled = true;
+    showTailBanner('🔭 只读监听中：本地 CLI 的同会话事件会实时推送到此页面，输入框已禁用以避免双写冲突。');
+    updateTailToggleVisibility();
+  }
+  function stopTailUi() {
+    tailing = false;
+    document.body.classList.remove('tail-mode-active');
+    if (msgInput) msgInput.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
+    if (attachBtn) attachBtn.disabled = false;
+    hideTailBanner();
+    updateTailToggleVisibility();
+  }
+  function showTailBanner(text) {
+    let banner = document.getElementById('tail-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'tail-banner';
+      banner.className = 'tail-banner';
+      const main = document.querySelector('.chat-main');
+      if (main) main.insertBefore(banner, main.firstChild);
+    }
+    banner.textContent = text;
+    banner.hidden = false;
+  }
+  function hideTailBanner() {
+    const banner = document.getElementById('tail-banner');
+    if (banner) banner.hidden = true;
+  }
+  if (tailToggleBtn) {
+    tailToggleBtn.addEventListener('click', () => {
+      if (!currentSessionId) return;
+      if (tailing) {
+        send({ type: 'detach_tail' });
+      } else {
+        send({ type: 'attach_tail', sessionId: currentSessionId });
+      }
     });
   }
 
@@ -2232,6 +2298,17 @@
           // R42 + R43 + R49: errorClass + hookEvent + warningType all forwarded.
           appendSystemMessage(msg.message, msg.kind || null, msg.errorClass || null, msg.hookEvent || null, msg.warningType || null);
         }
+        break;
+
+      case 'tail_started':
+        startTailUi();
+        break;
+      case 'tail_stopped':
+        stopTailUi();
+        break;
+      case 'tail_error':
+        stopTailUi();
+        appendSystemMessage('实时监听失败：' + (msg.message || ''), 'error', 'unknown', null, null);
         break;
 
       case 'usage_detail':

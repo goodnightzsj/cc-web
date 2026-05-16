@@ -4977,3 +4977,65 @@ input[type="radio"]:focus-visible {
 @media (max-width: 480px) {
   .ssh-host-badge { max-width: 110px; }
 }
+
+/* ============ R57 — read-only CLI tail mode ============
+   The button lives in the chat header next to the SSH badge; when active it
+   pulses to signal that an external CLI process is the source of truth.
+   The banner is a strong info-tinted pill anchored to the top of the
+   messages container so user knows input is intentionally locked. */
+.tail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-4);
+  margin-left: var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--info) 40%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+  color: var(--info);
+  font: var(--fw-semibold) var(--fs-xs)/1.2 var(--font-ui);
+  letter-spacing: var(--ls-wide);
+  cursor: pointer;
+  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+.tail-toggle:hover {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  border-color: color-mix(in srgb, var(--info) 60%, transparent);
+}
+.tail-toggle:active { transform: scale(0.96); }
+.tail-toggle[data-active='1'] {
+  background: color-mix(in srgb, var(--info) 24%, transparent);
+  border-color: var(--info);
+  color: var(--info);
+  animation: tail-pulse 1.6s ease-in-out infinite;
+}
+@keyframes tail-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 45%, transparent); }
+  50%      { box-shadow: 0 0 0 4px color-mix(in srgb, var(--info) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tail-toggle[data-active='1'] { animation: none; }
+}
+
+.tail-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-6);
+  margin: var(--space-4) var(--space-6) 0;
+  border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
+  border-left: 3px solid var(--info);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--info) 10%, var(--surface-1));
+  color: var(--text-1);
+  font: var(--type-meta);
+  letter-spacing: var(--ls-normal);
+}
+.tail-banner[hidden] { display: none; }
+
+body.tail-mode-active .msg-input,
+body.tail-mode-active #send-btn,
+body.tail-mode-active #attach-btn {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
