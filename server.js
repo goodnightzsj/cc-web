@@ -2911,6 +2911,12 @@ function handleLoadSession(ws, sessionId) {
   if (!session) {
     return wsSend(ws, { type: 'error', message: 'Session not found' });
   }
+  // R63: stop any tail still attached to this ws — the client already
+  // dropped subsequent tail events for the previous session via the
+  // sessionId guard, but the server kept polling the old jsonl every
+  // 500ms. Cleanup here mirrors handleDisconnect's tail tear-down.
+  const prevTail = externalTails.get(ws);
+  if (prevTail) { prevTail.stop(); externalTails.delete(ws); }
   if (getSessionAgent(session) === 'claude' && !session.cwd && session.claudeSessionId) {
     const localMeta = resolveClaudeSessionLocalMeta(session.claudeSessionId);
     if (localMeta?.cwd) {
