@@ -2170,6 +2170,9 @@ wss.on('connection', (ws, req) => {
       case 'list_native_sessions':
         handleListNativeSessions(ws);
         break;
+      case 'delete_native_session':
+        handleDeleteNativeSession(ws, msg);
+        break;
       case 'import_native_session':
         handleImportNativeSession(ws, msg);
         break;
@@ -3867,19 +3870,6 @@ const {
   sanitizeToolInput,
 });
 
-function getImportedSessionIds() {
-  const imported = new Set();
-  try {
-    for (const f of fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.json'))) {
-      try {
-        const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
-        if (s.claudeSessionId) imported.add(s.claudeSessionId);
-      } catch {}
-    }
-  } catch {}
-  return imported;
-}
-
 // R57: per-ws tail handles. One active tail at a time per socket; reattach
 // stops the previous. Cleaned up in handleDisconnect.
 const externalTails = new Map();
@@ -3944,61 +3934,207 @@ function handleDetachTail(ws) {
   wsSend(ws, { type: 'tail_stopped' });
 }
 
+// R58: bounded-IO partial parser for the import-list. The CLI's jsonl is
+// append-only, so the first user message (→ title + cwd) lives near the head
+// and the latest timestamp lives near the tail; we only need ~50KB head +
+// ~8KB tail to derive everything the modal renders. Cached by mtime+size so
+// re-opening the modal is effectively free.
+const NATIVE_META_HEAD_BYTES = 64 * 1024;
+const NATIVE_META_TAIL_BYTES = 16 * 1024;
+const NATIVE_META_CACHE_MAX = 1024;
+const nativeMetaCache = new Map(); // key=`${path}|${mtimeMs}|${size}` → meta
+
+function readBytesRange(filePath, start, length) {
+  if (length <= 0) return '';
+  const fd = fs.openSync(filePath, 'r');
+  try {
+    const buf = Buffer.allocUnsafe(length);
+    const read = fs.readSync(fd, buf, 0, length, start);
+    return buf.slice(0, read).toString('utf8');
+  } finally {
+    try { fs.closeSync(fd); } catch {}
+  }
+}
+
+function parseClaudeJsonlMeta(filePath, sizeBytes, mtimeMs) {
+  const cacheKey = `${filePath}|${mtimeMs}|${sizeBytes}`;
+  const cached = nativeMetaCache.get(cacheKey);
+  if (cached) return cached;
+
+  let title = null;
+  let cwd = null;
+  let firstUserTs = null;
+  let lastTs = null;
+
+  const headLen = Math.min(NATIVE_META_HEAD_BYTES, sizeBytes);
+  if (headLen > 0) {
+    const headStr = readBytesRange(filePath, 0, headLen);
+    // The tail of the head chunk may be a partial line; drop it unless we
+    // already covered the whole file in one shot.
+    const headLines = headStr.split('\n');
+    if (headLen < sizeBytes) headLines.pop();
+    for (const line of headLines) {
+      const t = line.trim();
+      if (!t) continue;
+      try {
+        const e = JSON.parse(t);
+        if (e.timestamp && !lastTs) lastTs = e.timestamp;
+        if (e.timestamp) lastTs = e.timestamp;
+        if (e.type === 'user' && !title) {
+          if (!cwd && e.cwd) cwd = e.cwd;
+          firstUserTs = e.timestamp || firstUserTs;
+          const raw = e.message?.content;
+          let text = '';
+          if (typeof raw === 'string') text = raw;
+          else if (Array.isArray(raw)) {
+            text = raw.filter(b => b.type === 'text').map(b => b.text || '').join('');
+          }
+          if (text.trim()) title = text.trim().slice(0, 80).replace(/\n/g, ' ');
+        }
+        if (!cwd && e.cwd) cwd = e.cwd;
+      } catch {}
+    }
+  }
+
+  // Tail pass for lastTs only — needed because the head window may not reach
+  // the end of the file for sessions with multi-MB transcripts.
+  if (sizeBytes > NATIVE_META_HEAD_BYTES) {
+    const tailLen = Math.min(NATIVE_META_TAIL_BYTES, sizeBytes);
+    const tailStart = Math.max(0, sizeBytes - tailLen);
+    const tailStr = readBytesRange(filePath, tailStart, tailLen);
+    // Drop the leading partial line — we joined mid-line otherwise.
+    const tailLines = tailStr.split('\n');
+    if (tailStart > 0) tailLines.shift();
+    for (let i = tailLines.length - 1; i >= 0; i--) {
+      const t = tailLines[i].trim();
+      if (!t) continue;
+      try {
+        const e = JSON.parse(t);
+        if (e.timestamp) { lastTs = e.timestamp; break; }
+      } catch {}
+    }
+  }
+
+  const meta = {
+    title: title || null,
+    cwd: cwd || null,
+    updatedAt: lastTs || firstUserTs || null,
+    mtimeMs,
+    sizeBytes,
+  };
+
+  if (nativeMetaCache.size >= NATIVE_META_CACHE_MAX) {
+    // Drop the oldest entry; Map preserves insertion order.
+    const oldestKey = nativeMetaCache.keys().next().value;
+    if (oldestKey) nativeMetaCache.delete(oldestKey);
+  }
+  nativeMetaCache.set(cacheKey, meta);
+  return meta;
+}
+
+// R58: build a {claudeSessionId → ccWebSessionId} map so the modal can offer
+// "delete the cc-web copy" without an extra round-trip.
+function getImportedSessionMap() {
+  const map = new Map();
+  try {
+    for (const f of fs.readdirSync(SESSIONS_DIR).filter(f => f.endsWith('.json'))) {
+      try {
+        const s = JSON.parse(fs.readFileSync(path.join(SESSIONS_DIR, f), 'utf8'));
+        if (s.claudeSessionId) map.set(s.claudeSessionId, s.id);
+      } catch {}
+    }
+  } catch {}
+  return map;
+}
+
 function handleListNativeSessions(ws) {
   const groups = [];
   try {
-    const imported = getImportedSessionIds();
+    const importedMap = getImportedSessionMap();
     const dirs = fs.readdirSync(CLAUDE_PROJECTS_DIR).filter(d => {
       try { return fs.statSync(path.join(CLAUDE_PROJECTS_DIR, d)).isDirectory(); } catch { return false; }
     });
     for (const dir of dirs) {
       const dirPath = path.join(CLAUDE_PROJECTS_DIR, dir);
       const sessionItems = [];
+      let groupCwdSample = null;
       try {
         const files = fs.readdirSync(dirPath).filter(f => f.endsWith('.jsonl'));
         for (const f of files) {
           const sessionId = f.replace('.jsonl', '');
           const filePath = path.join(dirPath, f);
-          try {
-            const content = fs.readFileSync(filePath, 'utf8');
-            const lines = content.split('\n');
-            // Find first user message for title
-            let title = sessionId.slice(0, 20);
-            let cwd = null;
-            let updatedAt = null;
-            let lastTs = null;
-            for (const line of lines) {
-              const t = line.trim();
-              if (!t) continue;
-              try {
-                const e = JSON.parse(t);
-                if (e.timestamp) lastTs = e.timestamp;
-                if (e.type === 'user' && !cwd) {
-                  cwd = e.cwd || null;
-                  const raw = e.message?.content;
-                  let text = '';
-                  if (typeof raw === 'string') text = raw;
-                  else if (Array.isArray(raw)) text = raw.filter(b => b.type === 'text').map(b => b.text || '').join('');
-                  if (text.trim()) title = text.trim().slice(0, 80).replace(/\n/g, ' ');
-                }
-              } catch {}
-            }
-            updatedAt = lastTs;
-            sessionItems.push({ sessionId, title, cwd, updatedAt, alreadyImported: imported.has(sessionId) });
-          } catch {}
+          let stat;
+          try { stat = fs.statSync(filePath); } catch { continue; }
+          const meta = parseClaudeJsonlMeta(filePath, stat.size, stat.mtimeMs);
+          if (meta.cwd && !groupCwdSample) groupCwdSample = meta.cwd;
+          sessionItems.push({
+            sessionId,
+            title: meta.title || sessionId.slice(0, 20),
+            cwd: meta.cwd,
+            // Fall back to mtime so sessions written before the CLI started
+            // emitting `timestamp` fields still sort correctly.
+            updatedAt: meta.updatedAt || new Date(stat.mtimeMs).toISOString(),
+            updatedAtSource: meta.updatedAt ? 'event' : 'mtime',
+            sizeBytes: stat.size,
+            mtimeMs: stat.mtimeMs,
+            alreadyImported: importedMap.has(sessionId),
+            importedAsId: importedMap.get(sessionId) || null,
+          });
         }
       } catch {}
       if (sessionItems.length > 0) {
-        sessionItems.sort((a, b) => {
-          if (!a.updatedAt) return 1;
-          if (!b.updatedAt) return -1;
-          return new Date(b.updatedAt) - new Date(a.updatedAt);
-        });
-        groups.push({ dir, sessions: sessionItems });
+        sessionItems.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        const groupUpdatedAt = sessionItems[0].updatedAt;
+        groups.push({ dir, cwdSample: groupCwdSample, sessions: sessionItems, updatedAt: groupUpdatedAt });
       }
     }
+    // Groups sorted by their newest session — fixes the readdir-order bug
+    // that put unrelated projects above the one the user worked on yesterday.
+    groups.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
   } catch {}
   wsSend(ws, { type: 'native_sessions', groups });
+}
+
+// R58: delete the on-disk CLI jsonl. DESTRUCTIVE — local `claude` resume
+// against this sessionId becomes impossible after this. Requires the caller
+// to pass {confirm:true} so a stray click in the modal can never trigger it.
+function handleDeleteNativeSession(ws, msg) {
+  const sessionId = msg?.sessionId;
+  const projectDir = msg?.projectDir;
+  if (!sessionId || !projectDir) {
+    return wsSend(ws, { type: 'error', message: '缺少 sessionId 或 projectDir' });
+  }
+  if (msg?.confirm !== true) {
+    return wsSend(ws, { type: 'error', message: '危险操作未确认' });
+  }
+  const filePath = path.join(CLAUDE_PROJECTS_DIR, String(projectDir), `${sanitizeId(sessionId)}.jsonl`);
+  const resolved = path.resolve(filePath);
+  if (!resolved.startsWith(path.resolve(CLAUDE_PROJECTS_DIR) + path.sep)) {
+    return wsSend(ws, { type: 'error', message: '非法路径' });
+  }
+  let removed = false;
+  try {
+    if (fs.existsSync(resolved)) {
+      fs.unlinkSync(resolved);
+      removed = true;
+    }
+    // Drop the sidecar dir too (Claude stores per-session attachments there).
+    const sidecarDir = path.join(CLAUDE_PROJECTS_DIR, String(projectDir), sanitizeId(sessionId));
+    if (fs.existsSync(sidecarDir)) {
+      try { fs.rmSync(sidecarDir, { recursive: true, force: true }); } catch {}
+    }
+    // Invalidate cache entries for this file.
+    for (const k of Array.from(nativeMetaCache.keys())) {
+      if (k.startsWith(resolved + '|')) nativeMetaCache.delete(k);
+    }
+  } catch (err) {
+    plog('WARN', 'native_jsonl_delete_failed', { sessionId: sessionId.slice(0, 8), err: String(err?.message || err) });
+    return wsSend(ws, { type: 'error', message: '删除失败：' + String(err?.message || err) });
+  }
+  plog('INFO', 'native_jsonl_deleted', { sessionId: sessionId.slice(0, 8), projectDir, removed });
+  wsSend(ws, { type: 'native_session_deleted', sessionId, projectDir });
+  // Re-emit the list so the modal can re-render without a manual round-trip.
+  handleListNativeSessions(ws);
 }
 
 function handleImportNativeSession(ws, msg) {

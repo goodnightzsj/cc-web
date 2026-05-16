@@ -3456,6 +3456,134 @@ html[data-theme='coolvibe'] .settings-back:hover {
 }
 .import-item-btn:hover { background: var(--accent-hover); }
 
+/* ============ R58 — import modal toolbar + filter + delete ============ */
+.import-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) 0 var(--space-5);
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: var(--space-5);
+}
+.import-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-5);
+  justify-content: space-between;
+}
+.chip-group {
+  display: inline-flex;
+  gap: var(--space-2);
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-pill);
+  background: var(--bg-tertiary);
+}
+.chip {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font: var(--fw-semibold) var(--fs-xs)/1.4 var(--font-ui);
+  padding: 4px var(--space-4);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+  letter-spacing: var(--ls-wide);
+}
+.chip:hover { color: var(--text-primary); }
+.chip-active {
+  background: var(--surface-strong);
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.import-search {
+  width: 100%;
+  padding: var(--space-3) var(--space-5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  font: var(--type-body);
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
+}
+.import-search::placeholder { color: var(--text-muted); }
+.import-search:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.import-summary {
+  font: var(--type-meta);
+  color: var(--text-muted);
+  letter-spacing: var(--ls-normal);
+}
+
+.import-list { display: block; }
+.import-group-count {
+  margin-left: var(--space-3);
+  padding: 1px var(--space-3);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-pill);
+  font-weight: var(--fw-normal);
+  letter-spacing: var(--ls-normal);
+}
+.import-group-flat .import-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+.import-item-pathhint {
+  font: var(--type-micro);
+  color: var(--text-muted);
+  margin-bottom: var(--space-2);
+  letter-spacing: var(--ls-wide);
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.import-item-imported {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+.import-item-imported .import-item-tag {
+  margin-left: var(--space-3);
+  vertical-align: middle;
+}
+.import-item-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.import-item-btn-secondary {
+  background: var(--surface-strong);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+.import-item-btn-secondary:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.import-item-btn-danger {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+.import-item-btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+}
+@media (max-width: 600px) {
+  .import-toolbar-row { flex-direction: column; align-items: stretch; }
+  .chip-group { width: 100%; justify-content: center; }
+  .import-item { flex-direction: column; align-items: stretch; }
+  .import-item-actions { justify-content: stretch; }
+  .import-item-actions .import-item-btn { flex: 1 1 0; }
+}
+
 /* ============ Streaming liveness signal (BEAUTY-2) ============ */
 /* Two complementary cues for in-flight assistant streaming:
    (1) trailing caret blinks at the end of msg-text (terminal feel)
@@ -4996,7 +5124,7 @@ input[type="radio"]:focus-visible {
   font: var(--fw-semibold) var(--fs-xs)/1.2 var(--font-ui);
   letter-spacing: var(--ls-wide);
   cursor: pointer;
-  transition: background var(--motion-fast) ease, border-color var(--motion-fast) ease, transform var(--motion-fast) ease;
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 .tail-toggle:hover {
   background: color-mix(in srgb, var(--info) 18%, transparent);
@@ -5026,7 +5154,7 @@ input[type="radio"]:focus-visible {
   border: 1px solid color-mix(in srgb, var(--info) 45%, transparent);
   border-left: 3px solid var(--info);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--info) 10%, var(--surface-1));
+  background: color-mix(in srgb, var(--info) 10%, var(--surface-strong));
   color: var(--text-1);
   font: var(--type-meta);
   letter-spacing: var(--ls-normal);

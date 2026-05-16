@@ -2461,6 +2461,10 @@
         if (typeof _onNativeSessions === 'function') _onNativeSessions(msg.groups || []);
         break;
 
+      case 'native_session_deleted':
+        if (typeof _onNativeSessionDeleted === 'function') _onNativeSessionDeleted(msg.sessionId || '');
+        break;
+
       case 'codex_sessions':
         if (typeof _onCodexSessions === 'function') _onCodexSessions(msg.sessions || []);
         break;
@@ -6471,8 +6475,29 @@
     });
   }
 
-  // --- Import Native Session Modal ---
+  // --- Import Native Session Modal (R58) ---
+  // The modal is now a controlled view over the server's `native_sessions`
+  // payload — it owns three pieces of state (view mode / filter / search)
+  // and re-renders the list whenever any of them change, so groups never
+  // need to round-trip to the server for what is purely a presentation
+  // concern. Server still ships everything in one shot.
   let _onNativeSessions = null;
+  let _onNativeSessionDeleted = null;
+
+  function formatBytes(n) {
+    if (!n || n < 1024) return `${n || 0} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  }
+  // Slug → path is ambiguous when the original cwd contained `-` (claude
+  // uses `-` as both separator and a literal character with no escape).
+  // Use the jsonl-extracted cwd as ground truth, fall back to the naive
+  // decode only when no session in the group surfaced a cwd.
+  function decodeProjectSlug(slug) {
+    let p = slug.replace(/-/g, '/');
+    if (!p.startsWith('/')) p = '/' + p;
+    return p.replace(/\/+/g, '/');
+  }
 
   function showImportSessionModal() {
     if (currentAgent !== 'claude') return;
@@ -6488,73 +6513,254 @@
         </div>
         <div class="modal-body" id="is-body">
           ${buildAgentContextCard('claude', '从 Claude 原生历史导入', '读取 ~/.claude/projects/ 下的会话文件，恢复对话文本与工具调用，并保留 Claude 侧续接上下文。')}
+          <div class="import-toolbar" id="is-toolbar" hidden>
+            <div class="import-toolbar-row">
+              <div class="chip-group" role="tablist" aria-label="视图">
+                <button class="chip" data-view="project" role="tab" aria-selected="true">📁 按项目</button>
+                <button class="chip" data-view="time" role="tab" aria-selected="false">🕐 按时间</button>
+              </div>
+              <div class="chip-group" role="group" aria-label="筛选">
+                <button class="chip" data-filter="all" aria-pressed="true">全部</button>
+                <button class="chip" data-filter="new" aria-pressed="false">仅未导入</button>
+                <button class="chip" data-filter="imported" aria-pressed="false">仅已导入</button>
+              </div>
+            </div>
+            <input type="search" class="import-search" id="is-search" placeholder="搜索标题 / cwd / sessionId…" autocomplete="off" spellcheck="false" />
+            <div class="import-summary" id="is-summary"></div>
+          </div>
           <div class="modal-loading">正在加载…</div>
+          <div class="import-list" id="is-list"></div>
         </div>
       </div>
     `;
 
     document.body.appendChild(overlay);
 
+    let allGroups = [];
+    let viewMode = 'project';
+    let filter = 'all';
+    let query = '';
+
     function close() {
       overlay.remove();
       _onNativeSessions = null;
+      _onNativeSessionDeleted = null;
     }
 
     overlay.querySelector('#is-close-btn').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-    _onNativeSessions = (groups) => {
-      const body = overlay.querySelector('#is-body');
-      if (!body) return;
-      if (!groups || groups.length === 0) {
-        body.innerHTML = `${buildAgentContextCard('claude', '从 Claude 原生历史导入', '读取 ~/.claude/projects/ 下的会话文件，恢复对话文本与工具调用，并保留 Claude 侧续接上下文。')}<div class="modal-empty">未找到本地 CLI 会话</div>`;
+    const toolbar = overlay.querySelector('#is-toolbar');
+    const searchInput = overlay.querySelector('#is-search');
+    const summaryEl = overlay.querySelector('#is-summary');
+    const listEl = overlay.querySelector('#is-list');
+    const loadingEl = overlay.querySelector('.modal-loading');
+
+    toolbar.addEventListener('click', (e) => {
+      const view = e.target?.dataset?.view;
+      const f = e.target?.dataset?.filter;
+      if (view) {
+        viewMode = view;
+        for (const b of toolbar.querySelectorAll('[data-view]')) {
+          const on = b.dataset.view === view;
+          b.setAttribute('aria-selected', on ? 'true' : 'false');
+          b.classList.toggle('chip-active', on);
+        }
+        renderList();
+      } else if (f) {
+        filter = f;
+        for (const b of toolbar.querySelectorAll('[data-filter]')) {
+          const on = b.dataset.filter === f;
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          b.classList.toggle('chip-active', on);
+        }
+        renderList();
+      }
+    });
+    // Mark initial active chips so the toolbar styles correctly on first paint.
+    toolbar.querySelector('[data-view="project"]').classList.add('chip-active');
+    toolbar.querySelector('[data-filter="all"]').classList.add('chip-active');
+
+    let searchDebounce = null;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => {
+        query = searchInput.value.trim().toLowerCase();
+        renderList();
+      }, 80);
+    });
+
+    function matchesFilter(sess) {
+      if (filter === 'new') return !sess.alreadyImported;
+      if (filter === 'imported') return sess.alreadyImported;
+      return true;
+    }
+    function matchesQuery(sess) {
+      if (!query) return true;
+      const hay = `${sess.title || ''}\n${sess.cwd || ''}\n${sess.sessionId || ''}`.toLowerCase();
+      return hay.includes(query);
+    }
+
+    function makeItemEl(sess, projectDir) {
+      const item = document.createElement('div');
+      item.className = 'import-item';
+      if (sess.alreadyImported) item.classList.add('import-item-imported');
+
+      const info = document.createElement('div');
+      info.className = 'import-item-info';
+      const titleEl = document.createElement('div');
+      titleEl.className = 'import-item-title';
+      titleEl.textContent = sess.title;
+      if (sess.alreadyImported) {
+        const tag = document.createElement('span');
+        tag.className = 'import-item-tag';
+        tag.textContent = '已导入';
+        titleEl.appendChild(tag);
+      }
+      const meta = document.createElement('div');
+      meta.className = 'import-item-meta';
+      const cwdText = sess.cwd ? sess.cwd : '';
+      const timeText = sess.updatedAt ? timeAgo(sess.updatedAt) : '';
+      const sizeText = formatBytes(sess.sizeBytes || 0);
+      const tsHint = sess.updatedAtSource === 'mtime' ? '（按 mtime）' : '';
+      meta.textContent = [cwdText, timeText + tsHint, sizeText].filter(Boolean).join(' · ');
+      if (sess.updatedAt) meta.title = new Date(sess.updatedAt).toLocaleString();
+      info.appendChild(titleEl);
+      info.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'import-item-actions';
+
+      const importBtn = document.createElement('button');
+      importBtn.className = 'import-item-btn';
+      importBtn.textContent = sess.alreadyImported ? '重新导入' : '导入';
+      importBtn.addEventListener('click', async () => {
+        if (sess.alreadyImported) {
+          if (!(await appConfirm('已导入过此会话，重新导入将覆盖已有内容。确认继续？'))) return;
+        } else {
+          if (!(await appConfirm('由于 cc-web 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？'))) return;
+        }
+        close();
+        send({ type: 'import_native_session', sessionId: sess.sessionId, projectDir });
+      });
+      actions.appendChild(importBtn);
+
+      if (sess.alreadyImported && sess.importedAsId) {
+        const dropBtn = document.createElement('button');
+        dropBtn.className = 'import-item-btn import-item-btn-secondary';
+        dropBtn.textContent = '清除副本';
+        dropBtn.title = '删除 cc-web 内的导入副本（原始 CLI 文件保留）';
+        dropBtn.addEventListener('click', async () => {
+          if (!(await appConfirm('确认删除 cc-web 内的这份导入副本？原始 CLI 文件不会受到影响。'))) return;
+          send({ type: 'delete_session', sessionId: sess.importedAsId });
+          // optimistic UI — flip alreadyImported off until server re-broadcasts
+          sess.alreadyImported = false;
+          sess.importedAsId = null;
+          renderList();
+        });
+        actions.appendChild(dropBtn);
+      }
+
+      const wipeBtn = document.createElement('button');
+      wipeBtn.className = 'import-item-btn import-item-btn-danger';
+      wipeBtn.textContent = '🗑 删除原始';
+      wipeBtn.title = '不可逆：删除 ~/.claude/projects 中的 jsonl，本地 CLI 也将无法 /resume 此会话';
+      wipeBtn.addEventListener('click', async () => {
+        const confirmed = await appConfirm(
+          `⚠ 不可逆操作\n\n` +
+          `将删除：\n  ${sess.cwd ? sess.cwd + '\n  ' : ''}sessionId: ${sess.sessionId}\n\n` +
+          `这会同时让本地 CLI 失去 /resume 此会话的能力。${sess.alreadyImported ? '（cc-web 内的导入副本不受影响）' : ''}\n\n` +
+          `确认删除原始 jsonl？`
+        );
+        if (!confirmed) return;
+        send({ type: 'delete_native_session', sessionId: sess.sessionId, projectDir, confirm: true });
+      });
+      actions.appendChild(wipeBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
+      return item;
+    }
+
+    function renderList() {
+      listEl.innerHTML = '';
+      const visibleSessions = [];
+      let totalSessions = 0;
+
+      for (const group of allGroups) {
+        for (const s of group.sessions) {
+          totalSessions++;
+          if (matchesFilter(s) && matchesQuery(s)) visibleSessions.push({ sess: s, projectDir: group.dir });
+        }
+      }
+
+      if (totalSessions === 0) {
+        listEl.innerHTML = `<div class="modal-empty">未找到本地 CLI 会话</div>`;
+        summaryEl.textContent = '';
         return;
       }
-      body.innerHTML = buildAgentContextCard('claude', '从 Claude 原生历史导入', '读取 ~/.claude/projects/ 下的会话文件，恢复对话文本与工具调用，并保留 Claude 侧续接上下文。');
-      for (const group of groups) {
+
+      if (visibleSessions.length === 0) {
+        listEl.innerHTML = `<div class="modal-empty">没有匹配的会话</div>`;
+        summaryEl.textContent = `共 ${totalSessions} 条，当前筛选后 0 条`;
+        return;
+      }
+
+      summaryEl.textContent = `共 ${totalSessions} 条会话 / ${allGroups.length} 个项目，当前显示 ${visibleSessions.length} 条`;
+
+      if (viewMode === 'time') {
+        // Single flat list ordered by updatedAt desc — drops project grouping.
+        visibleSessions.sort((a, b) => new Date(b.sess.updatedAt) - new Date(a.sess.updatedAt));
+        const flat = document.createElement('div');
+        flat.className = 'import-group import-group-flat';
+        for (const { sess, projectDir } of visibleSessions) {
+          const inGroupHeader = document.createElement('div');
+          inGroupHeader.className = 'import-item-pathhint';
+          const matchingGroup = allGroups.find(g => g.dir === projectDir);
+          inGroupHeader.textContent = matchingGroup?.cwdSample || decodeProjectSlug(projectDir);
+          const item = makeItemEl(sess, projectDir);
+          item.insertBefore(inGroupHeader, item.firstChild);
+          flat.appendChild(item);
+        }
+        listEl.appendChild(flat);
+        return;
+      }
+
+      // Project view (default). Groups are already time-sorted by the server.
+      const byGroup = new Map();
+      for (const { sess, projectDir } of visibleSessions) {
+        if (!byGroup.has(projectDir)) byGroup.set(projectDir, []);
+        byGroup.get(projectDir).push(sess);
+      }
+      for (const group of allGroups) {
+        const sessions = byGroup.get(group.dir);
+        if (!sessions || !sessions.length) continue;
         const groupEl = document.createElement('div');
         groupEl.className = 'import-group';
-        // Convert slug dir to readable path
-        let readablePath = group.dir.replace(/-/g, '/');
-        if (!readablePath.startsWith('/')) readablePath = '/' + readablePath;
-        readablePath = readablePath.replace(/\/+/g, '/');
         const groupTitle = document.createElement('div');
         groupTitle.className = 'import-group-title';
-        groupTitle.textContent = readablePath;
+        // Real cwd from any jsonl in this group beats the lossy slug decode.
+        groupTitle.textContent = group.cwdSample || decodeProjectSlug(group.dir);
+        const groupMeta = document.createElement('span');
+        groupMeta.className = 'import-group-count';
+        groupMeta.textContent = `${sessions.length} 条`;
+        groupTitle.appendChild(groupMeta);
         groupEl.appendChild(groupTitle);
-        for (const sess of group.sessions) {
-          const item = document.createElement('div');
-          item.className = 'import-item';
-          const info = document.createElement('div');
-          info.className = 'import-item-info';
-          const titleEl = document.createElement('div');
-          titleEl.className = 'import-item-title';
-          titleEl.textContent = sess.title;
-          const meta = document.createElement('div');
-          meta.className = 'import-item-meta';
-          const cwdText = sess.cwd ? sess.cwd : '';
-          const timeText = sess.updatedAt ? timeAgo(sess.updatedAt) : '';
-          meta.textContent = [cwdText, timeText].filter(Boolean).join(' · ');
-          info.appendChild(titleEl);
-          info.appendChild(meta);
-          const btn = document.createElement('button');
-          btn.className = 'import-item-btn';
-          btn.textContent = sess.alreadyImported ? '重新导入' : '导入';
-          btn.addEventListener('click', async () => {
-            if (sess.alreadyImported) {
-              if (!(await appConfirm('已导入过此会话，重新导入将覆盖已有内容。确认继续？'))) return;
-            } else {
-              if (!(await appConfirm('由于 cc-web 与本地 CLI 的逻辑不同，导入会话需要解析后方可展示，导入后将覆盖已有内容。确认继续？'))) return;
-            }
-            close();
-            send({ type: 'import_native_session', sessionId: sess.sessionId, projectDir: group.dir });
-          });
-          item.appendChild(info);
-          item.appendChild(btn);
-          groupEl.appendChild(item);
-        }
-        body.appendChild(groupEl);
+        for (const sess of sessions) groupEl.appendChild(makeItemEl(sess, group.dir));
+        listEl.appendChild(groupEl);
       }
+    }
+
+    _onNativeSessions = (groups) => {
+      allGroups = groups || [];
+      if (loadingEl) loadingEl.style.display = 'none';
+      toolbar.hidden = false;
+      renderList();
+    };
+    _onNativeSessionDeleted = (sessionId) => {
+      // server already followed up with a refreshed `native_sessions` list,
+      // so this hook is just a UX confirmation surface.
+      showToast(`已删除 ${sessionId.slice(0, 8)} 的本地 jsonl`);
     };
 
     send({ type: 'list_native_sessions' });
