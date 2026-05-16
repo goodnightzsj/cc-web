@@ -1824,7 +1824,7 @@
     tailToggleBtn.dataset.active = tailing ? '1' : '0';
     tailToggleBtn.textContent = tailing ? '⏹ 停止监听' : '🔭 实时监听';
   }
-  function startTailUi(reason) {
+  function startTailUi(reason, msg) {
     tailing = true;
     document.body.classList.add('tail-mode-active');
     if (msgInput) msgInput.disabled = true;
@@ -1832,8 +1832,21 @@
     if (attachBtn) attachBtn.disabled = true;
     const prefix = reason === 'auto-import'
       ? '🔭 检测到该会话本地 CLI 仍在写入，已自动开启只读监听'
-      : '🔭 只读监听中';
-    showTailBanner(`${prefix}：来自本地 CLI 进程的新增对话/工具调用/思考将实时推送到此页面，输入框已禁用以避免双写冲突。`);
+      : '🔭 只读监听已附加';
+    // R71: differentiate the two attach scenarios so the user knows what
+    // to expect — "等待 CLI 端新事件" when at EOF (no backlog), or
+    // "正在重放 X KB 增量" when there's backlog from a previous tail
+    // session.
+    let suffix;
+    if (msg && msg.startedAtEof) {
+      suffix = '：从此刻起 CLI 端的新对话/工具调用/思考会实时出现。如果 CLI 端最近无新动作，将看不到内容（之前的内容已在历史中）。输入框已禁用以避免双写冲突。';
+    } else if (msg && msg.backlogBytes > 0) {
+      const kb = (msg.backlogBytes / 1024).toFixed(1);
+      suffix = `：检测到 ${kb} KB 增量未同步，将先重放这段，再衔接实时事件。输入框已禁用以避免双写冲突。`;
+    } else {
+      suffix = '：来自本地 CLI 进程的新增对话/工具调用/思考将实时推送到此页面，输入框已禁用以避免双写冲突。';
+    }
+    showTailBanner(prefix + suffix);
     updateTailToggleVisibility();
   }
   function stopTailUi() {
@@ -2359,7 +2372,7 @@
         break;
 
       case 'tail_started':
-        startTailUi(msg.reason || 'manual');
+        startTailUi(msg.reason || 'manual', msg);
         break;
       case 'tail_stopped':
         stopTailUi();

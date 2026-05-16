@@ -3905,6 +3905,10 @@ function parseJsonlToMessages(lines) {
   // overload) and writes the same msg_xxx row twice. Without this the bubble
   // duplicates inside cc-web's transcript.
   const seenMessageIds = new Set();
+  // R71: dedupe pr-link by prUrl. CLI emits a pr-link row every time the
+  // operator runs `/github` or `git push` and the URL is unchanged — one
+  // imported session was producing 2817 identical "🔗 已创建 PR #1" bubbles.
+  const seenPrUrls = new Set();
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -4222,7 +4226,12 @@ function parseJsonlToMessages(lines) {
     }
     // R63: PR link rows from CLI's /github / git commit flow. CLI shows
     // these as a clickable link; we render an info banner.
+    // R71: only the first occurrence per prUrl — the CLI emits one row
+    // every time the operator inspects the PR, which on a long session
+    // can produce thousands of identical bubbles.
     if (entry.type === 'pr-link' && entry.prUrl) {
+      if (seenPrUrls.has(entry.prUrl)) continue;
+      seenPrUrls.add(entry.prUrl);
       messages.push({
         role: 'system',
         kind: 'info',
@@ -4363,8 +4372,20 @@ function startTailFor(ws, sessionId, filePath, { reason = 'manual' } = {}) {
   });
   externalTails.set(ws, tail);
   const resumedFrom = resumeOffset !== null ? resumeOffset : null;
-  wsSend(ws, { type: 'tail_started', sessionId, jsonlPath: filePath, reason, resumedFrom });
-  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: filePath, reason, resumedFrom });
+  // R71: classify the attach moment so client banner can be honest about
+  // what to expect: "fresh" means no backlog to replay (resume at EOF
+  // or no offset persisted), "replay" means there's a gap of bytes that
+  // will stream in as the first batch.
+  let fileSize = 0;
+  try { fileSize = fs.statSync(filePath).size; } catch {}
+  const startedAtEof = resumeOffset === null || resumeOffset >= fileSize - 1;
+  wsSend(ws, {
+    type: 'tail_started',
+    sessionId, jsonlPath: filePath, reason, resumedFrom,
+    startedAtEof,
+    backlogBytes: startedAtEof ? 0 : fileSize - resumeOffset,
+  });
+  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: filePath, reason, resumedFrom, startedAtEof });
 }
 
 // R60: classify a single jsonl line and route it to the right pipeline.
@@ -4705,7 +4726,13 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
     return;
   }
   // R63: live PR-link surfaces from /github commit/PR flow on the CLI side.
+  // R71: dedupe by prUrl per pseudoEntry — CLI repeats identical pr-link
+  // rows on every `gh pr view` / push and that filled the chat with the
+  // same banner thousands of times.
   if (event.type === 'pr-link' && event.prUrl) {
+    pseudoEntry.seenPrUrls = pseudoEntry.seenPrUrls || new Set();
+    if (pseudoEntry.seenPrUrls.has(event.prUrl)) return;
+    pseudoEntry.seenPrUrls.add(event.prUrl);
     wsSend(ws, {
       type: 'system_message',
       sessionId,
@@ -4932,9 +4959,12 @@ function handleDeleteNativeSession(ws, msg) {
 
 // R64: hard cap on import size. Loading a 91MB jsonl into a single string +
 // running split('\n') + JSON.parse on every row blew past the systemd
-// MemoryMax=1G limit during automated testing (V8 OOM crash). 50MB still
-// produces a healthy session (~5000 turns) without risking the heap.
-const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
+// MemoryMax=1G limit during automated testing (V8 OOM crash). R67 added
+// streaming readline + IMPORT_YIELD_INTERVAL yielding, so the per-line
+// memory footprint is bounded by one line at a time — R71 lifts the ceiling
+// to 300MB so a user's real 196MB inkwell-app session can be re-imported
+// (the prior 50MB blocked them from rebuilding a corrupt session.json).
+const MAX_IMPORT_BYTES = 300 * 1024 * 1024;
 const MAX_IMPORT_MESSAGES = 5000;
 const IMPORT_YIELD_INTERVAL = 250; // lines per yield to keep ws heartbeats alive
 
