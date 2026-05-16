@@ -5304,21 +5304,48 @@ input[type="radio"]:focus-visible {
   .hb-action { font-size: var(--fs-xs); }
 }
 
-/* ============ R72 — queued user message marker ============ */
-.msg.user[data-queued="1"] .msg-bubble {
+/* ============ R72 — queued user message marker ============
+   Hex/RGB note: the default .msg.user bubble uses white text on the
+   accent (vermillion) fill. Queued bubbles shift the fill to a near-
+   white "warning-tinted" surface, so the text color MUST flip to a
+   dark on-surface tone — otherwise white-on-white renders effectively
+   invisible (only browser text-selection reveal would show it).
+   Same rule for any nested attachment-label / code spans. */
+/* R73 specificity bump: `html .msg.user[data-queued="1"] .msg-bubble` =
+   (0,2,3), matching the per-theme overrides like
+   `html[data-theme='coolvibe'] .msg.user .msg-bubble`. Without this the
+   coolvibe theme's cyan-gradient background won out, leaving queued
+   bubbles indistinguishable from normal user messages (and rendering
+   their nested attachment-labels with white text on a near-white
+   background — only readable by selecting the text). The `html` type
+   prefix also outranks any future per-theme override that doesn't
+   explicitly include the [data-queued] qualifier. */
+html .msg.user[data-queued="1"] .msg-bubble {
   border-left: 3px solid var(--warning);
-  background: color-mix(in srgb, var(--warning) 6%, var(--surface-strong));
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface-strong));
+  background-image: none;
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
-.msg.user[data-queued="1"] .msg-bubble::before {
+html .msg.user[data-queued="1"] .msg-bubble::before {
   content: '⏳ 排队中 · 等待模型处理';
   display: block;
   font-size: var(--fs-micro);
   text-transform: uppercase;
   letter-spacing: var(--ls-widest);
   color: var(--warning);
-  opacity: 0.85;
+  opacity: 0.95;
   margin-bottom: var(--space-2);
   font-weight: var(--fw-semibold);
+}
+html .msg.user[data-queued="1"] .msg-bubble .msg-attachment-label {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--text-primary);
+  border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+}
+html .msg.user[data-queued="1"] .msg-bubble code:not(pre code) {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--text-primary);
 }
 
 /* ============ R68 — older-history loading hint ============ */
