@@ -3881,6 +3881,7 @@ function parseJsonlToMessages(lines) {
       }
       let content = '';
       const toolResults = [];
+      const userAttachments = [];
       if (typeof raw === 'string') {
         content = stripAnsi(raw);
       } else if (Array.isArray(raw)) {
@@ -3889,6 +3890,19 @@ function parseJsonlToMessages(lines) {
           else if (b?.type === 'tool_result') {
             const idx = toolUseIndex.get(b.tool_use_id);
             if (idx) toolResults.push({ idx, block: b, top: entry.toolUseResult });
+          }
+          // R63: CLI users sometimes paste / drag-drop images into the
+          // terminal. The jsonl serializes those as inline image blocks
+          // inside the user message. Without surfacing them, the import
+          // shows only the accompanying text and the user can't tell what
+          // visual context they sent. Render an attachment label noting
+          // the image was sent (we don't try to inline the base64 because
+          // cc-web's attachment pipeline stores them by id, not by source).
+          else if (b?.type === 'image') {
+            userAttachments.push({
+              filename: 'CLI 上传的图片',
+              storageState: 'external',
+            });
           }
         }
       }
@@ -3931,8 +3945,10 @@ function parseJsonlToMessages(lines) {
           };
         }
       }
-      if (content.trim()) {
-        messages.push({ role: 'user', content, timestamp: entry.timestamp || null });
+      if (content.trim() || userAttachments.length) {
+        const msg = { role: 'user', content, timestamp: entry.timestamp || null };
+        if (userAttachments.length) msg.attachments = userAttachments;
+        messages.push(msg);
       }
       continue;
     }
