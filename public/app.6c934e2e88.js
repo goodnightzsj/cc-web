@@ -3104,6 +3104,11 @@
 	      // R49: historical warning bubbles get warningType for icon.
 	      if (m.warningType) el.dataset.warningType = m.warningType;
 	    }
+	    // R72: queued user message marker — CLI queue-operation / queued_command
+	    // surfaces a user prompt that the model hasn't picked up yet.
+	    if (m.role === 'user' && m.kind === 'queued') {
+	      el.dataset.queued = '1';
+	    }
 	    // R43: historical assistant with stopReason → append the chip at render.
 	    if (m.role === 'assistant' && m.stopReason) {
 	      setTimeout(() => appendStopReasonChip(el, m.stopReason), 0);

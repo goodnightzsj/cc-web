@@ -3,7 +3,19 @@ const fs = require('fs');
 const WebSocket = require('/root/cc-web/node_modules/ws');
 
 const PASSWORD = JSON.parse(fs.readFileSync('/root/cc-web/config/auth.json', 'utf8')).password;
-const SID = '0b2d858f-2be8-4b2b-8061-d17c00c7a1c5';  // the 34MB session
+// R72: pick the largest session on disk at run-time so the test survives
+// session re-imports / deletes (which kept invalidating a hardcoded SID).
+const SID = (() => {
+  let id = null, max = 0;
+  for (const f of fs.readdirSync('/root/cc-web/sessions').filter(x => x.endsWith('.json'))) {
+    try {
+      const s = JSON.parse(fs.readFileSync('/root/cc-web/sessions/' + f, 'utf8'));
+      if ((s.messages || []).length > max) { max = s.messages.length; id = s.id; }
+    } catch {}
+  }
+  if (!id) throw new Error('no sessions to test against');
+  return id;
+})();
 
 let pass=0, fail=0;
 function ok(label, cond, detail='') {

@@ -1,6 +1,19 @@
 const fs = require('fs');
 const WebSocket = require('/root/cc-web/node_modules/ws');
 const PASSWORD = JSON.parse(fs.readFileSync('/root/cc-web/config/auth.json', 'utf8')).password;
+// R72: find the largest session at run-time (the prior hardcoded one kept
+// getting deleted by other tests / R65 cleanup flows).
+const SID = (() => {
+  let id = null, max = 0;
+  for (const f of fs.readdirSync('/root/cc-web/sessions').filter(x => x.endsWith('.json'))) {
+    try {
+      const s = JSON.parse(fs.readFileSync('/root/cc-web/sessions/' + f, 'utf8'));
+      if ((s.messages || []).length > max) { max = s.messages.length; id = s.id; }
+    } catch {}
+  }
+  if (!id) throw new Error('no sessions to test against');
+  return id;
+})();
 
 let pass=0, fail=0;
 function ok(label, cond, detail='') { if (cond) { pass++; console.log(' ✓', label); } else { fail++; console.log(' ✗', label, detail ? '— '+detail : ''); } }
@@ -22,13 +35,13 @@ function ok(label, cond, detail='') { if (cond) { pass++; console.log(' ✓', la
   console.log('== R70 — exhaust + cache-empty reply ==');
 
   // 1. Drain the entire 14630-msg session's queue, asserting remaining→0 eventually
-  send({ type: 'load_session', sessionId: '0b2d858f-2be8-4b2b-8061-d17c00c7a1c5' });
+  send({ type: 'load_session', sessionId: SID });
   const si = await recv('session_info', 30000);
   ok('session_info historyPending=true', si.historyPending === true);
 
   let totalChunks = 0, totalMessages = 0, lastRemaining = -1;
   while (true) {
-    send({ type: 'request_older_history', sessionId: '0b2d858f-2be8-4b2b-8061-d17c00c7a1c5' });
+    send({ type: 'request_older_history', sessionId: SID });
     const c = await recv('session_history_chunk', 8000);
     totalChunks++;
     totalMessages += (c.messages || []).length;
@@ -42,7 +55,7 @@ function ok(label, cond, detail='') { if (cond) { pass++; console.log(' ✓', la
   // 2. After exhaust, request once more — server must STILL reply with empty chunk
   // (R70 fix: previously it just `break`-ed and never responded, leaving inFlight stuck).
   const t0 = Date.now();
-  send({ type: 'request_older_history', sessionId: '0b2d858f-2be8-4b2b-8061-d17c00c7a1c5' });
+  send({ type: 'request_older_history', sessionId: SID });
   const empty = await recv('session_history_chunk', 4000);
   ok(`R70: post-exhaust request still replied (${Date.now()-t0}ms)`, !!empty);
   ok('R70: post-exhaust messages = []', Array.isArray(empty.messages) && empty.messages.length === 0);

@@ -3909,6 +3909,13 @@ function parseJsonlToMessages(lines) {
   // operator runs `/github` or `git push` and the URL is unchanged — one
   // imported session was producing 2817 identical "🔗 已创建 PR #1" bubbles.
   const seenPrUrls = new Set();
+  // R72: CLI writes the operator's typed input first as `queue-operation`
+  // (when the previous turn is still running) and shortly after as an
+  // `attachment.queued_command` row carrying the same prompt text. Both
+  // pre-date the eventual `type:'user'` row that fires when the queued
+  // turn is actually consumed by the model. Track seen prompts so the
+  // same Sprint γ message isn't shown three times.
+  const seenQueuedPrompts = new Set();
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -4033,6 +4040,21 @@ function parseJsonlToMessages(lines) {
         }
       }
       if (content.trim() || userAttachments.length) {
+        // R72: if this text was already shown as a queued prompt earlier,
+        // upgrade that bubble in place rather than producing a duplicate.
+        if (content.trim() && seenQueuedPrompts.has(content.trim())) {
+          // Find the most recent queued bubble matching this content and
+          // strip its kind so the UI treats it as a normal user message.
+          for (let i = messages.length - 1; i >= 0; i--) {
+            const m = messages[i];
+            if (m.role === 'user' && m.kind === 'queued' && m.content === content.trim()) {
+              delete m.kind;
+              m.timestamp = entry.timestamp || m.timestamp;
+              break;
+            }
+          }
+          continue;
+        }
         const msg = { role: 'user', content, timestamp: entry.timestamp || null };
         if (userAttachments.length) msg.attachments = userAttachments;
         messages.push(msg);
@@ -4221,6 +4243,37 @@ function parseJsonlToMessages(lines) {
         if (added.length) parts.push(`新增 ${added.length} 个工具`);
         if (removed.length) parts.push(`移除 ${removed.length} 个工具`);
         messages.push({ role: 'system', kind: 'info', content: parts.join(' · '), ts: entry.timestamp || null });
+      }
+      continue;
+    }
+    // R72: queued user prompt that the CLI hasn't fed to the model yet.
+    // Show it eagerly so the chat reflects what the user typed; dedupe
+    // against the eventual `type:'user'` row by content.
+    if (entry.type === 'queue-operation' && entry.operation === 'enqueue' && entry.content) {
+      const key = String(entry.content);
+      if (!seenQueuedPrompts.has(key)) {
+        seenQueuedPrompts.add(key);
+        messages.push({
+          role: 'user',
+          kind: 'queued',
+          content: key,
+          timestamp: entry.timestamp || null,
+        });
+      }
+      continue;
+    }
+    // R72: same prompt arriving via attachment wrapper — usually
+    // immediately after the queue-operation row.
+    if (entry.type === 'attachment' && entry.attachment?.type === 'queued_command' && entry.attachment.prompt) {
+      const key = String(entry.attachment.prompt);
+      if (!seenQueuedPrompts.has(key)) {
+        seenQueuedPrompts.add(key);
+        messages.push({
+          role: 'user',
+          kind: 'queued',
+          content: key,
+          timestamp: entry.timestamp || null,
+        });
       }
       continue;
     }
@@ -4539,7 +4592,14 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
       text = raw.filter(b => b && b.type === 'text').map(b => b.text || '').join('');
     }
     if (text.trim()) {
-      wsSend(ws, { type: 'tail_user_message', text: stripAnsi(text), sessionId, ts: event.timestamp || null });
+      const cleaned = stripAnsi(text).trim();
+      // R72: skip if we already announced this prompt via the queue-operation
+      // / queued_command path. The user has already seen "⏳ 排队中：…" and
+      // doesn't need a duplicate without the prefix.
+      pseudoEntry.seenQueuedPrompts = pseudoEntry.seenQueuedPrompts || new Set();
+      if (!pseudoEntry.seenQueuedPrompts.has(cleaned)) {
+        wsSend(ws, { type: 'tail_user_message', text: cleaned, sessionId, ts: event.timestamp || null });
+      }
     }
     // Defer to processClaudeEvent so tool_result blocks update existing
     // tool chips through R51's processToolResultBlock.
@@ -4723,6 +4783,25 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
         sendSessionList(ws);
       }
     } catch {}
+    return;
+  }
+  // R72: queued user prompt — CLI hasn't sent it to the model yet.
+  if (event.type === 'queue-operation' && event.operation === 'enqueue' && event.content) {
+    pseudoEntry.seenQueuedPrompts = pseudoEntry.seenQueuedPrompts || new Set();
+    const key = String(event.content);
+    if (!pseudoEntry.seenQueuedPrompts.has(key)) {
+      pseudoEntry.seenQueuedPrompts.add(key);
+      wsSend(ws, { type: 'tail_user_message', text: '⏳ 排队中：' + key, sessionId, ts: event.timestamp || null, queued: true });
+    }
+    return;
+  }
+  if (event.type === 'attachment' && event.attachment?.type === 'queued_command' && event.attachment.prompt) {
+    pseudoEntry.seenQueuedPrompts = pseudoEntry.seenQueuedPrompts || new Set();
+    const key = String(event.attachment.prompt);
+    if (!pseudoEntry.seenQueuedPrompts.has(key)) {
+      pseudoEntry.seenQueuedPrompts.add(key);
+      wsSend(ws, { type: 'tail_user_message', text: '⏳ 排队中：' + key, sessionId, ts: event.timestamp || null, queued: true });
+    }
     return;
   }
   // R63: live PR-link surfaces from /github commit/PR flow on the CLI side.

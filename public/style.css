@@ -5304,6 +5304,23 @@ input[type="radio"]:focus-visible {
   .hb-action { font-size: var(--fs-xs); }
 }
 
+/* ============ R72 — queued user message marker ============ */
+.msg.user[data-queued="1"] .msg-bubble {
+  border-left: 3px solid var(--warning);
+  background: color-mix(in srgb, var(--warning) 6%, var(--surface-strong));
+}
+.msg.user[data-queued="1"] .msg-bubble::before {
+  content: '⏳ 排队中 · 等待模型处理';
+  display: block;
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-widest);
+  color: var(--warning);
+  opacity: 0.85;
+  margin-bottom: var(--space-2);
+  font-weight: var(--fw-semibold);
+}
+
 /* ============ R68 — older-history loading hint ============ */
 .older-history-hint {
   display: flex;
