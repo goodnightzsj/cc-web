@@ -1017,6 +1017,7 @@
       sshHostId: payload.sshHostId || '',
       remoteCwd: payload.remoteCwd || '',
       canTailExternal: !!payload.canTailExternal,
+      gitBranch: payload.gitBranch || '',
     };
   }
 
@@ -1514,6 +1515,9 @@
     if (tailing) stopTailUi(); // session switched while tailing → stop
     updateTailToggleVisibility();
     updateCwdBadge();
+    // R63: paint persisted git branch chip on session-load so the header is
+    // accurate before the next jsonl event arrives.
+    updateGitBranchBadge(snapshot.gitBranch || '');
     if (snapshot.mode && MODE_LABELS[snapshot.mode]) {
       currentMode = snapshot.mode;
       setModeSelectUI(currentMode);

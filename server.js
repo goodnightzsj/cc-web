@@ -3084,6 +3084,9 @@ function handleLoadSession(ws, sessionId) {
     canTailExternal: getSessionAgent(session) === 'claude'
       && !!session.claudeSessionId
       && !!resolveClaudeSessionLocalMeta(session.claudeSessionId)?.filePath,
+    // R63: surface persisted gitBranch so the chat header chip can paint on
+    // first load instead of waiting for the next jsonl tail event.
+    gitBranch: session.gitBranch || null,
   });
 
   if (olderChunks.length > 0) {
@@ -4515,7 +4518,9 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
   }
   // R63: branch hint for the chat header. Every assistant/system jsonl row
   // carries the cwd's git branch at that moment; reflecting changes mirrors
-  // what the CLI's status line shows.
+  // what the CLI's status line shows. Persist into session so a page
+  // reload still shows the correct branch in the header without waiting
+  // for the next jsonl event.
   if (event.gitBranch && typeof event.gitBranch === 'string' && pseudoEntry.lastGitBranch !== event.gitBranch) {
     pseudoEntry.lastGitBranch = event.gitBranch;
     wsSend(ws, {
@@ -4523,6 +4528,13 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
       sessionId,
       gitBranch: event.gitBranch,
     });
+    try {
+      const sess = loadSession(sessionId);
+      if (sess && sess.gitBranch !== event.gitBranch) {
+        sess.gitBranch = event.gitBranch;
+        saveSession(sess);
+      }
+    } catch {}
   }
   processClaudeEvent(pseudoEntry, event, sessionId);
 }
@@ -4836,6 +4848,7 @@ function handleImportNativeSession(ws, msg) {
     sshHostId: session.sshHostId || '',
     remoteCwd: session.remoteCwd || '',
     canTailExternal: true,
+    gitBranch: session.gitBranch || null,
   });
   sendSessionList(ws);
 

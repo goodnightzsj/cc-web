@@ -5357,3 +5357,25 @@ body.tail-mode-active #attach-btn {
   opacity: 0.5;
   cursor: not-allowed;
 }
+/* R63: AskUserQuestion cards in tail mode can't actually answer the CLI
+   (cc-web is read-only on this session), so options are visually frozen +
+   a banner spelling out why. The CLI is still the one that needs to
+   collect the answer in its terminal. */
+body.tail-mode-active .ask-option-item,
+body.tail-mode-active .ask-submit-btn {
+  pointer-events: none;
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+body.tail-mode-active .ask-question-card::after {
+  content: '🔭 只读监听中：请回到本地 CLI 终端作答';
+  display: block;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  font: var(--type-meta);
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--info) 30%, transparent);
+  border-radius: var(--radius-md);
+  letter-spacing: var(--ls-wide);
+}
