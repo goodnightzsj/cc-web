@@ -3812,29 +3812,103 @@ function resolveClaudeSessionLocalMeta(claudeSessionId) {
   return null;
 }
 
+// R63: rich import — preserve the CLI's elemental story instead of only
+// user / assistant text. Each jsonl line is mapped to a message-shaped row
+// that buildMsgElement on the client already knows how to render (system
+// kinds were defined for R36–R62; the tail path emits them via wsSendR R33
+// persistence, but the import path was building messages from scratch and
+// dropped every system / permission / ai-title / slash-command artifact).
+//
+// Returns { messages, finalTitle, finalPermissionMode } so the caller can
+// promote the AI-titled label and the latest permission mode onto the
+// session record itself.
 function parseJsonlToMessages(lines) {
   const messages = [];
+  let finalTitle = null;
+  let finalPermissionMode = null;
+  // Track latest seen tool_use input by id so the matching tool_result block
+  // can hang off the same assistant message in the right order.
+  const toolUseIndex = new Map(); // id → { msgIdx, callIdx }
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     let entry;
     try { entry = JSON.parse(trimmed); } catch { continue; }
+
+    // ---- USER ----
     if (entry.type === 'user') {
+      // Hide CLI's internal caveat/meta lines exactly like tail does.
       const raw = entry.message?.content;
-      let content = '';
+      if (entry.isMeta) continue;
+      if (typeof raw === 'string' && isLocalCommandCaveat(raw)) continue;
+      // Slash command invocation → system row.
       if (typeof raw === 'string') {
-        content = raw;
+        const slash = parseSlashCommand(raw);
+        if (slash) {
+          messages.push({
+            role: 'system',
+            kind: 'slash-command',
+            content: `已执行 /${slash.name.replace(/^\//, '')}${slash.args ? ' ' + slash.args : ''}`,
+            ts: entry.timestamp || null,
+          });
+          continue;
+        }
+        if (raw.trim() === '[Request interrupted by user]') {
+          messages.push({
+            role: 'system',
+            kind: 'abort',
+            content: '⏹ 已被用户中止',
+            ts: entry.timestamp || null,
+          });
+          continue;
+        }
+      }
+      let content = '';
+      const toolResults = [];
+      if (typeof raw === 'string') {
+        content = stripAnsi(raw);
       } else if (Array.isArray(raw)) {
-        // skip tool_result blocks, only take text blocks
-        content = raw
-          .filter(b => b.type === 'text')
-          .map(b => b.text || '')
-          .join('');
+        for (const b of raw) {
+          if (b?.type === 'text' && b.text) content += b.text;
+          else if (b?.type === 'tool_result') {
+            const idx = toolUseIndex.get(b.tool_use_id);
+            if (idx) toolResults.push({ idx, block: b, top: entry.toolUseResult });
+          }
+        }
+      }
+      // Apply pending tool_results onto their owning assistant message.
+      for (const { idx, block, top } of toolResults) {
+        const msg = messages[idx.msgIdx];
+        if (!msg || !Array.isArray(msg.toolCalls)) continue;
+        const tc = msg.toolCalls[idx.callIdx];
+        if (!tc) continue;
+        tc.done = true;
+        let resultText = '';
+        if (typeof block.content === 'string') resultText = block.content;
+        else if (Array.isArray(block.content)) {
+          resultText = block.content.filter(c => c.type === 'text').map(c => c.text || '').join('');
+        }
+        tc.result = stripAnsi(resultText);
+        if (block.is_error) tc.isError = true;
+        if (top && typeof top === 'object') {
+          tc.toolUseResult = {
+            ...(typeof top.stdout === 'string' ? { stdout: top.stdout } : {}),
+            ...(typeof top.stderr === 'string' ? { stderr: top.stderr } : {}),
+            ...(typeof top.exitCode === 'number' ? { exitCode: top.exitCode } : {}),
+            ...(typeof top.interrupted === 'boolean' ? { interrupted: top.interrupted } : {}),
+            ...(typeof top.isImage === 'boolean' ? { isImage: top.isImage } : {}),
+          };
+        }
       }
       if (content.trim()) {
         messages.push({ role: 'user', content, timestamp: entry.timestamp || null });
       }
-    } else if (entry.type === 'assistant') {
+      continue;
+    }
+
+    // ---- ASSISTANT ----
+    if (entry.type === 'assistant') {
       const blocks = entry.message?.content;
       if (!Array.isArray(blocks)) continue;
       let content = '';
@@ -3845,17 +3919,177 @@ function parseJsonlToMessages(lines) {
           content += b.text;
         } else if (b.type === 'thinking' && (b.thinking || b.text)) {
           thinking += b.thinking || b.text || '';
+        } else if (b.type === 'redacted_thinking') {
+          thinking += '[已加密的推理段，模型已对此次思考做加密处理]\n';
         } else if (b.type === 'tool_use') {
-          toolCalls.push({ name: b.name, id: b.id, input: b.input, done: true });
+          // R45/R44 kind tagging mirrors agent-runtime live emission.
+          let kind = null;
+          let meta = null;
+          const FILE_TOOLS = ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'];
+          if (FILE_TOOLS.includes(b.name)) {
+            kind = 'file_change';
+            const fp = b.input?.file_path || b.input?.notebook_path || '';
+            meta = { kind: 'file_change', title: b.name, subtitle: fp };
+          } else if (typeof b.name === 'string' && b.name.startsWith('mcp__')) {
+            const parts = b.name.split('__');
+            kind = 'mcp_tool_call';
+            meta = { kind: 'mcp_tool_call', title: parts.slice(2).join('__') || b.name, subtitle: 'mcp:' + (parts[1] || ''), mcpServer: parts[1] || '', mcpAction: parts.slice(2).join('__') };
+          } else if (b.name === 'ExitPlanMode') {
+            kind = 'plan_proposal';
+            meta = { kind: 'plan_proposal', title: '计划提案', plan: b.input?.plan || '' };
+          } else if (b.name === 'Task') {
+            kind = 'sub_agent';
+            meta = {
+              kind: 'sub_agent',
+              title: 'Sub-Agent · ' + (b.input?.subagent_type || 'general-purpose'),
+              description: typeof b.input?.description === 'string' ? b.input.description : '',
+              prompt: typeof b.input?.prompt === 'string' ? b.input.prompt.slice(0, 240) : '',
+            };
+          }
+          toolCalls.push({ name: b.name, id: b.id, input: b.input, done: false, kind, meta });
         }
       }
       if (content.trim() || thinking.trim() || toolCalls.length > 0) {
+        const msgIdx = messages.length;
         messages.push({ role: 'assistant', content, thinking: thinking || undefined, toolCalls, timestamp: entry.timestamp || null });
+        // Index tool_use blocks so subsequent user.tool_result can pair up.
+        toolCalls.forEach((tc, i) => { if (tc.id) toolUseIndex.set(tc.id, { msgIdx, callIdx: i }); });
       }
+      continue;
     }
-    // skip other types
+
+    // ---- SYSTEM ----
+    if (entry.type === 'system') {
+      const sub = entry.subtype;
+      if (sub === 'init') {
+        // Synthesize the same init line tail emits, so historical replay
+        // shows the model/cwd/tools/MCP banner instead of starting blank.
+        const toolsArr = Array.isArray(entry.tools) ? entry.tools : [];
+        const mcpArr = Array.isArray(entry.mcp_servers) ? entry.mcp_servers : [];
+        const slashArr = Array.isArray(entry.slash_commands) ? entry.slash_commands : [];
+        const parts = [];
+        parts.push(`Claude Code 已就绪${entry.model ? ' · ' + entry.model : ''}`);
+        if (entry.cwd) parts.push(`cwd: ${entry.cwd}`);
+        const meta = [];
+        if (toolsArr.length) meta.push(`${toolsArr.length} tools`);
+        if (mcpArr.length) meta.push(`${mcpArr.length} MCP server${mcpArr.length === 1 ? '' : 's'}`);
+        if (slashArr.length) meta.push(`${slashArr.length} slash`);
+        if (meta.length) parts.push(meta.join(' · '));
+        messages.push({ role: 'system', kind: 'init', content: parts.join('\n'), ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'compact_summary') {
+        if (entry.summary) {
+          messages.push({ role: 'system', kind: 'compact-summary', content: String(entry.summary), ts: entry.timestamp || null });
+        }
+        continue;
+      }
+      if (sub === 'compact_boundary') {
+        messages.push({ role: 'system', kind: 'compact-boundary', content: '——— /compact 边界 ———', ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'local_command') {
+        const parsed = parseLocalCommandStdout(entry.content || '');
+        if (parsed && (parsed.stdout || parsed.stderr)) {
+          messages.push({
+            role: 'system',
+            kind: 'command-output',
+            content: parsed.stdout || parsed.stderr,
+            ts: entry.timestamp || null,
+          });
+        }
+        continue;
+      }
+      if (sub === 'away_summary' && entry.content) {
+        messages.push({ role: 'system', kind: 'away-summary', content: String(entry.content), ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'api_error') {
+        const err = entry.error || {};
+        const parts = [];
+        parts.push(`Anthropic API 错误：HTTP ${err.status || '??'}`);
+        if (entry.retryAttempt && entry.maxRetries) parts.push(`第 ${entry.retryAttempt}/${entry.maxRetries} 次重试`);
+        messages.push({
+          role: 'system',
+          kind: 'error',
+          errorClass: err.status === 429 ? 'rate-limit' : (err.status >= 500 ? 'overload' : 'unknown'),
+          content: parts.join(' · '),
+          ts: entry.timestamp || null,
+        });
+        continue;
+      }
+      if (sub === 'turn_duration') {
+        const ms = entry.durationMs || 0;
+        const seconds = ms / 1000;
+        const fmt = seconds < 60
+          ? `${seconds.toFixed(1)}s`
+          : `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+        const count = entry.messageCount || 0;
+        messages.push({ role: 'system', kind: 'turn-duration', content: `本回合耗时 ${fmt}${count ? `（${count} 条消息）` : ''}`, ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'stop_hook_summary' && Array.isArray(entry.hookErrors) && entry.hookErrors.length > 0) {
+        messages.push({ role: 'system', kind: 'hook', hookEvent: 'Stop', content: 'Stop 钩子执行失败：' + entry.hookErrors.map(e => String(e?.message || e)).join('; '), ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'informational' && entry.content) {
+        messages.push({ role: 'system', kind: 'info', content: String(entry.content), ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'scheduled_task_fire' && entry.content) {
+        messages.push({ role: 'system', kind: 'scheduled-task', content: String(entry.content), ts: entry.timestamp || null });
+        continue;
+      }
+      if (sub === 'model_fallback') {
+        const orig = entry.original_model || entry.from_model || entry.from || '';
+        const fb = entry.fallback_model || entry.to_model || entry.to || entry.model || '';
+        const reason = entry.reason || entry.message || '';
+        const parts = [`模型降级${orig && fb ? `：${orig} → ${fb}` : ''}`];
+        if (reason) parts.push(reason);
+        messages.push({ role: 'system', kind: 'warning', warningType: 'model_fallback', content: parts.join(' · '), ts: entry.timestamp || null });
+        continue;
+      }
+      // Other subtypes (hook_response success / context_warning) — drop quietly.
+      continue;
+    }
+
+    // ---- META events at the top level ----
+    if (entry.type === 'permission-mode' && entry.permissionMode) {
+      if (finalPermissionMode !== entry.permissionMode) {
+        finalPermissionMode = entry.permissionMode;
+        messages.push({ role: 'system', kind: 'info', content: `权限模式：${entry.permissionMode}`, ts: entry.timestamp || null });
+      }
+      continue;
+    }
+    if (entry.type === 'ai-title' && entry.message?.title) {
+      finalTitle = String(entry.message.title).slice(0, 80);
+      continue;
+    }
+    if (entry.type === 'attachment' && entry.attachment?.type === 'deferred_tools_delta') {
+      const added = Array.isArray(entry.attachment.addedNames) ? entry.attachment.addedNames : [];
+      const removed = Array.isArray(entry.attachment.removedNames) ? entry.attachment.removedNames : [];
+      if (added.length || removed.length) {
+        const parts = [];
+        if (added.length) parts.push(`新增 ${added.length} 个工具`);
+        if (removed.length) parts.push(`移除 ${removed.length} 个工具`);
+        messages.push({ role: 'system', kind: 'info', content: parts.join(' · '), ts: entry.timestamp || null });
+      }
+      continue;
+    }
+    if (entry.type === 'rate_limit_event' || (entry.type === 'system' && entry.subtype === 'rate_limit_event')) {
+      // Surface only if rejected — same threshold the live path uses.
+      const info = entry.rate_limit_info || entry;
+      const status = info.status || '';
+      const overage = info.overageStatus || info.overage_status || '';
+      if ((status && status !== 'allowed') || overage === 'rejected') {
+        messages.push({ role: 'system', kind: 'rate-limit', content: `Anthropic 限额提示：${status || overage}`, ts: entry.timestamp || null });
+      }
+      continue;
+    }
+    // Unhandled types deliberately drop: queue-operation / last-prompt /
+    // file-history-snapshot / pr-link etc. carry no user-visible info.
   }
-  return messages;
+  return { messages, finalTitle, finalPermissionMode };
 }
 
 const {
@@ -3916,9 +4150,37 @@ function startTailFor(ws, sessionId, filePath, { reason = 'manual' } = {}) {
     errorSent: false, external: true,
   };
 
+  // R63: resume from the last recorded offset if we have one. The session
+  // doc carries lastJsonlOffset that's updated every poll cycle — surviving
+  // a ws reconnect (since the offset is on disk, not in memory). Treat any
+  // offset that lies beyond current file size as stale and fall back to EOF.
+  let resumeOffset = null;
+  try {
+    const sess = loadSession(sessionId);
+    const persisted = sess && typeof sess.lastJsonlOffset === 'number' ? sess.lastJsonlOffset : null;
+    if (persisted !== null) {
+      const stat = fs.statSync(filePath);
+      if (persisted >= 0 && persisted <= stat.size) resumeOffset = persisted;
+    }
+  } catch {}
+
+  let lastSavedOffset = -1;
+  const saveOffset = (offset) => {
+    if (typeof offset !== 'number' || offset === lastSavedOffset) return;
+    lastSavedOffset = offset;
+    try {
+      const sess = loadSession(sessionId);
+      if (sess) {
+        sess.lastJsonlOffset = offset;
+        saveSession(sess);
+      }
+    } catch {}
+  };
+
   const tail = createCliTail({
     jsonlPath: filePath,
-    startFromEnd: true,
+    startFromEnd: resumeOffset === null,
+    startOffset: resumeOffset,
     onEvent(event) {
       try { processTailEvent(event, pseudoEntry, ws, sessionId); }
       catch (e) { plog?.('WARN', 'tail_dispatch_err', { err: String(e?.message || e) }); }
@@ -3926,10 +4188,12 @@ function startTailFor(ws, sessionId, filePath, { reason = 'manual' } = {}) {
     onError(err) {
       wsSend(ws, { type: 'tail_error', message: String(err?.message || err) });
     },
+    onOffsetAdvance: saveOffset,
   });
   externalTails.set(ws, tail);
-  wsSend(ws, { type: 'tail_started', sessionId, jsonlPath: filePath, reason });
-  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: filePath, reason });
+  const resumedFrom = resumeOffset !== null ? resumeOffset : null;
+  wsSend(ws, { type: 'tail_started', sessionId, jsonlPath: filePath, reason, resumedFrom });
+  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: filePath, reason, resumedFrom });
 }
 
 // R60: classify a single jsonl line and route it to the right pipeline.
@@ -4487,7 +4751,10 @@ function handleImportNativeSession(ws, msg) {
     return wsSend(ws, { type: 'error', message: '无法读取会话文件' });
   }
   const lines = content.split('\n');
-  const messages = parseJsonlToMessages(lines);
+  // R63: parseJsonlToMessages now returns rich messages + late session
+  // metadata (ai-title / final permission mode). Use those to fill the
+  // session record instead of re-scanning the file manually.
+  const { messages, finalTitle, finalPermissionMode } = parseJsonlToMessages(lines);
 
   // Find or create cc-web session with this claudeSessionId
   let existingSession = null;
@@ -4500,8 +4767,10 @@ function handleImportNativeSession(ws, msg) {
     }
   } catch {}
 
-  // Determine title and cwd from messages/raw
-  let title = sessionId.slice(0, 20);
+  // Pick a fallback title from the first non-trivial user message when no
+  // ai-title was generated by the CLI. cwd still comes from the first user
+  // row since parseJsonlToMessages doesn't expose it.
+  let title = finalTitle || sessionId.slice(0, 20);
   let cwd = null;
   for (const line of lines) {
     const t = line.trim();
@@ -4510,14 +4779,24 @@ function handleImportNativeSession(ws, msg) {
       const e = JSON.parse(t);
       if (e.type === 'user') {
         if (!cwd) cwd = e.cwd || null;
-        const raw = e.message?.content;
-        let text = '';
-        if (typeof raw === 'string') text = raw;
-        else if (Array.isArray(raw)) text = raw.filter(b => b.type === 'text').map(b => b.text || '').join('');
-        if (text.trim()) { title = text.trim().slice(0, 60).replace(/\n/g, ' '); break; }
+        if (!finalTitle) {
+          const raw = e.message?.content;
+          let text = '';
+          if (typeof raw === 'string') text = raw;
+          else if (Array.isArray(raw)) text = raw.filter(b => b.type === 'text').map(b => b.text || '').join('');
+          if (text.trim() && title === sessionId.slice(0, 20)) {
+            title = text.trim().slice(0, 60).replace(/\n/g, ' ');
+          }
+        }
+        if (cwd && (finalTitle || title !== sessionId.slice(0, 20))) break;
       }
     } catch {}
   }
+  // CLI permissionMode strings → cc-web local mode keys.
+  const cliToLocal = { bypassPermissions: 'yolo', default: 'default', plan: 'plan', acceptEdits: 'yolo' };
+  const resolvedMode = finalPermissionMode && cliToLocal[finalPermissionMode]
+    ? cliToLocal[finalPermissionMode]
+    : (existingSession?.permissionMode || 'yolo');
 
   const id = existingSession ? existingSession.id : crypto.randomUUID();
   const session = {
@@ -4530,7 +4809,7 @@ function handleImportNativeSession(ws, msg) {
     codexThreadId: null,
     importedFrom: projectDir,
     model: existingSession?.model || null,
-    permissionMode: existingSession?.permissionMode || 'yolo',
+    permissionMode: resolvedMode,
     totalCost: existingSession?.totalCost || 0,
     totalUsage: existingSession?.totalUsage || { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
     messages,
@@ -4566,6 +4845,15 @@ function handleImportNativeSession(ws, msg) {
   // model response may go 30-60s between writes mid-turn.
   try {
     const stat = fs.statSync(filePath);
+    // R63: mark current size as the "already imported up to here" cursor so
+    // future reconnect-attaches resume from there instead of replaying the
+    // whole file again. This is essential because import has already
+    // populated session.messages from the same content.
+    const savedSess = loadSession(id);
+    if (savedSess) {
+      savedSess.lastJsonlOffset = stat.size;
+      saveSession(savedSess);
+    }
     const ageMs = Date.now() - stat.mtimeMs;
     if (ageMs < 90_000) {
       const prev = externalTails.get(ws);
