@@ -1534,6 +1534,10 @@
     canTailExternal = !!snapshot.canTailExternal;
     if (tailing) stopTailUi(); // session switched while tailing → stop
     updateTailToggleVisibility();
+    // R68: reset lazy-history state — every session has its own queue.
+    if (typeof window.__ccwebResetHistoryState === 'function') {
+      window.__ccwebResetHistoryState();
+    }
     updateCwdBadge();
     // R63: paint persisted git branch chip on session-load so the header is
     // accurate before the next jsonl event arrives.
@@ -2222,6 +2226,10 @@
           });
           if (!msg.remaining) {
             finalizeLoadedSession(msg.sessionId);
+          }
+          // R68: release the scroll-driven request lock + hide hint.
+          if (typeof window.__ccwebOnHistoryChunk === 'function') {
+            window.__ccwebOnHistoryChunk(msg);
           }
         }
         break;
@@ -4351,8 +4359,56 @@
     thumbEl.style.top = thumbTop + 'px';
   }
 
+  // R68: ask the server for the next older-history chunk when the user
+  // scrolls within 240px of the top. Server caches chunks per-ws so the
+  // initial load is only the most recent INITIAL_HISTORY_COUNT messages;
+  // everything older streams in on demand. Lock prevents duplicate
+  // requests while one is in flight.
+  let olderHistoryInFlight = false;
+  let olderHistoryExhausted = false;
+  function maybeFetchOlderHistory() {
+    if (olderHistoryInFlight || olderHistoryExhausted) return;
+    if (!currentSessionId) return;
+    if (messagesDiv.scrollTop > 240) return;
+    olderHistoryInFlight = true;
+    showOlderHistoryHint(true);
+    send({ type: 'request_older_history', sessionId: currentSessionId });
+  }
+  function showOlderHistoryHint(on) {
+    let hint = document.getElementById('older-history-hint');
+    if (on) {
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.id = 'older-history-hint';
+        hint.className = 'older-history-hint';
+        hint.textContent = '加载更早的历史…';
+        messagesDiv.insertBefore(hint, messagesDiv.firstChild);
+      }
+      hint.hidden = false;
+    } else if (hint) {
+      hint.remove();
+    }
+  }
+  function resetOlderHistoryState() {
+    olderHistoryInFlight = false;
+    olderHistoryExhausted = false;
+    showOlderHistoryHint(false);
+  }
+  // Expose so the session_history_chunk handler can clear the lock once
+  // the chunk arrives (or mark exhausted on remaining === 0 + empty chunk).
+  window.__ccwebOnHistoryChunk = function (msg) {
+    olderHistoryInFlight = false;
+    if (!Array.isArray(msg.messages) || msg.messages.length === 0) {
+      olderHistoryExhausted = true;
+    }
+    if (msg.remaining === 0) olderHistoryExhausted = true;
+    showOlderHistoryHint(!olderHistoryExhausted && olderHistoryInFlight);
+  };
+  window.__ccwebResetHistoryState = resetOlderHistoryState;
+
   messagesDiv.addEventListener('scroll', () => {
     updateScrollbar();
+    maybeFetchOlderHistory();
     // 移动端：滚动时短暂显示滑块，停止后淡出
     scrollbarEl.classList.add('scrolling');
     clearTimeout(scrollbarEl._hideTimer);

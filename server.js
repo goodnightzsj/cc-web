@@ -549,6 +549,12 @@ const activeProcesses = new Map();
 // Track which session each ws is viewing: ws -> sessionId
 const wsSessionMap = new Map();
 
+// R68: per-ws history chunk queue. Filled by handleLoadSession with the
+// session's older-than-recent message chunks (already split + ordered
+// newest-first). Drained by request_older_history. Cleared on ws close /
+// session switch / session delete.
+const wsHistoryCache = new Map(); // ws -> { sessionId, chunks: Array<message[]> }
+
 // Default fallback MODEL_MAP (overridden by model config at runtime)
 // opus/sonnet use [1m] suffix to enable 1M context window by default
 // Opus bumped to 4-7 (latest); Sonnet 4-6 is still latest as of 2026-05.
@@ -2116,6 +2122,28 @@ wss.on('connection', (ws, req) => {
       case 'list_sessions':
         sendSessionList(ws);
         break;
+
+      case 'request_older_history': {
+        // R68: client scrolled near the top of the messages pane — drain
+        // one chunk from the queue. Empty queue = nothing to send (client
+        // already saw historyPending go false on its own bookkeeping).
+        const cache = wsHistoryCache.get(ws);
+        if (!cache || cache.sessionId !== msg.sessionId) break;
+        const chunk = cache.chunks.shift();
+        if (!chunk) {
+          wsHistoryCache.delete(ws);
+          wsSend(ws, { type: 'session_history_chunk', sessionId: msg.sessionId, messages: [], remaining: 0 });
+          break;
+        }
+        wsSend(ws, {
+          type: 'session_history_chunk',
+          sessionId: msg.sessionId,
+          messages: chunk,
+          remaining: cache.chunks.length,
+        });
+        if (cache.chunks.length === 0) wsHistoryCache.delete(ws);
+        break;
+      }
       case 'detach_view':
         handleDetachView(ws);
         break;
@@ -2917,6 +2945,9 @@ function handleLoadSession(ws, sessionId) {
   // 500ms. Cleanup here mirrors handleDisconnect's tail tear-down.
   const prevTail = externalTails.get(ws);
   if (prevTail) { prevTail.stop(); externalTails.delete(ws); }
+  // R68: drop any cached older-history chunks queued for the previous
+  // session; the new session will repopulate the cache below.
+  wsHistoryCache.delete(ws);
   if (getSessionAgent(session) === 'claude' && !session.cwd && session.claudeSessionId) {
     const localMeta = resolveClaudeSessionLocalMeta(session.claudeSessionId);
     if (localMeta?.cwd) {
@@ -3097,15 +3128,15 @@ function handleLoadSession(ws, sessionId) {
     gitBranch: session.gitBranch || null,
   });
 
+  // R68: lazy load older history. Previously every chunk was force-pushed
+  // immediately after session_info, which over a 34MB / 14k-message session
+  // serialised + sent every byte even if the user never scrolled up.
+  // Now we cache the chunks per-ws and only fly them when the client asks
+  // (request_older_history). Scroll-driven fetch happens on the client.
   if (olderChunks.length > 0) {
-    olderChunks.forEach((chunk, index) => {
-      wsSend(ws, {
-        type: 'session_history_chunk',
-        sessionId: session.id,
-        messages: chunk,
-        remaining: Math.max(0, olderChunks.length - index - 1),
-      });
-    });
+    wsHistoryCache.set(ws, { sessionId: session.id, chunks: olderChunks });
+  } else {
+    wsHistoryCache.delete(ws);
   }
 
   // Resume streaming if process is still active
@@ -3280,6 +3311,8 @@ function handleDisconnect(ws, wsId) {
   // R57: stop any read-only CLI tail still attached to this ws.
   const tail = externalTails.get(ws);
   if (tail) { tail.stop(); externalTails.delete(ws); }
+  // R68: free queued older-history chunks (large messages arrays).
+  wsHistoryCache.delete(ws);
   plog('INFO', 'ws_disconnect', { wsId, activeProcessesAffected: affectedSessions });
 }
 

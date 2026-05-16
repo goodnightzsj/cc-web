@@ -5304,6 +5304,37 @@ input[type="radio"]:focus-visible {
   .hb-action { font-size: var(--fs-xs); }
 }
 
+/* ============ R68 — older-history loading hint ============ */
+.older-history-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin: 0 auto var(--space-3);
+  font: var(--type-meta);
+  color: var(--text-muted);
+  letter-spacing: var(--ls-wide);
+  background: color-mix(in srgb, var(--info) 5%, transparent);
+  border-radius: var(--radius-md);
+  width: fit-content;
+}
+.older-history-hint::before {
+  content: '';
+  display: inline-block;
+  width: 14px; height: 14px;
+  border: 2px solid color-mix(in srgb, var(--info) 35%, transparent);
+  border-top-color: var(--info);
+  border-radius: 50%;
+  animation: older-history-spin 0.8s linear infinite;
+}
+@keyframes older-history-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .older-history-hint::before { animation: none; }
+}
+
 /* ============ R57 — read-only CLI tail mode ============
    The button lives in the chat header next to the SSH badge; when active it
    pulses to signal that an external CLI process is the source of truth.
