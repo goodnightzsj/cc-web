@@ -4375,6 +4375,8 @@
   // requests while one is in flight.
   let olderHistoryInFlight = false;
   let olderHistoryExhausted = false;
+  let autoPumpCount = 0;
+  const AUTO_PUMP_MAX = 12; // ~288 messages worth before we let the user drive
   function maybeFetchOlderHistory(opts = {}) {
     if (olderHistoryInFlight || olderHistoryExhausted) return;
     if (!currentSessionId) return;
@@ -4384,7 +4386,13 @@
     // case OR when scrolled near the top.
     const underFilled = messagesDiv.scrollHeight <= messagesDiv.clientHeight + 40;
     const nearTop = messagesDiv.scrollTop <= 240;
-    if (!underFilled && !nearTop && !opts.force) return;
+    const userInitiated = nearTop && messagesDiv.scrollHeight > messagesDiv.clientHeight;
+    if (!underFilled && !userInitiated && !opts.force) return;
+    // R70: cap automatic (not user-scrolled) pump iterations so a
+    // 14k-row session doesn't fire 600 sequential requests on initial
+    // open. User-initiated scroll bypasses the cap.
+    if (!userInitiated && autoPumpCount >= AUTO_PUMP_MAX) return;
+    if (!userInitiated) autoPumpCount++;
     olderHistoryInFlight = true;
     showOlderHistoryHint(true);
     send({ type: 'request_older_history', sessionId: currentSessionId });
@@ -4396,17 +4404,33 @@
         hint = document.createElement('div');
         hint.id = 'older-history-hint';
         hint.className = 'older-history-hint';
-        hint.textContent = '加载更早的历史…';
         messagesDiv.insertBefore(hint, messagesDiv.firstChild);
       }
+      hint.textContent = '加载更早的历史…';
+      hint.classList.remove('older-history-done');
       hint.hidden = false;
     } else if (hint) {
       hint.remove();
     }
   }
+  // R70: explicit "you're at the top" indicator so the user knows the
+  // older-history queue is empty and no more loading will happen.
+  function showOlderHistoryDone() {
+    let hint = document.getElementById('older-history-hint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'older-history-hint';
+      hint.className = 'older-history-hint';
+      messagesDiv.insertBefore(hint, messagesDiv.firstChild);
+    }
+    hint.textContent = '— 已显示全部历史 —';
+    hint.classList.add('older-history-done');
+    hint.hidden = false;
+  }
   function resetOlderHistoryState() {
     olderHistoryInFlight = false;
     olderHistoryExhausted = false;
+    autoPumpCount = 0;
     showOlderHistoryHint(false);
   }
   // Expose so the session_history_chunk handler can clear the lock once
@@ -4417,12 +4441,15 @@
       olderHistoryExhausted = true;
     }
     if (msg.remaining === 0) olderHistoryExhausted = true;
-    showOlderHistoryHint(!olderHistoryExhausted && olderHistoryInFlight);
-    // R69: keep pumping until viewport is filled (or queue exhausted).
-    // Without this a session whose 12+24+... rows are mostly empty
-    // system bubbles would still leave a half-empty scrollable area
-    // with no scroll handle for the user to grab.
-    if (!olderHistoryExhausted) {
+    if (olderHistoryExhausted) {
+      showOlderHistoryDone();
+    } else {
+      showOlderHistoryHint(false);
+      // R69: keep pumping until viewport is filled (or queue exhausted).
+      // Without this a session whose 12+24+... rows are mostly empty
+      // system bubbles would still leave a half-empty scrollable area
+      // with no scroll handle for the user to grab. R70 caps the
+      // auto-pump count inside maybeFetchOlderHistory.
       setTimeout(() => maybeFetchOlderHistory(), 60);
     }
   };

@@ -2125,10 +2125,16 @@ wss.on('connection', (ws, req) => {
 
       case 'request_older_history': {
         // R68: client scrolled near the top of the messages pane — drain
-        // one chunk from the queue. Empty queue = nothing to send (client
-        // already saw historyPending go false on its own bookkeeping).
+        // one chunk from the queue.
+        // R70: must always reply so the client's in-flight lock releases.
+        // Previously `break` here left olderHistoryInFlight=true forever,
+        // the loading spinner never went away, and the user saw "more is
+        // coming" even after the queue was drained.
         const cache = wsHistoryCache.get(ws);
-        if (!cache || cache.sessionId !== msg.sessionId) break;
+        if (!cache || cache.sessionId !== msg.sessionId) {
+          wsSend(ws, { type: 'session_history_chunk', sessionId: msg.sessionId, messages: [], remaining: 0 });
+          break;
+        }
         const chunk = cache.chunks.shift();
         if (!chunk) {
           wsHistoryCache.delete(ws);

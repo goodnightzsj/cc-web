@@ -5328,6 +5328,12 @@ input[type="radio"]:focus-visible {
   border-radius: 50%;
   animation: older-history-spin 0.8s linear infinite;
 }
+/* R70: drop the spinner once the queue is exhausted; static "to the top" pill. */
+.older-history-hint.older-history-done::before { display: none; }
+.older-history-hint.older-history-done {
+  opacity: 0.65;
+  background: transparent;
+}
 @keyframes older-history-spin {
   to { transform: rotate(360deg); }
 }
