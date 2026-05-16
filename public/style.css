@@ -5357,6 +5357,9 @@ body.tail-mode-active #attach-btn {
   opacity: 0.5;
   cursor: not-allowed;
 }
+body.tail-mode-active #abort-btn {
+  display: none !important;
+}
 /* R63: AskUserQuestion cards in tail mode can't actually answer the CLI
    (cc-web is read-only on this session), so options are visually frozen +
    a banner spelling out why. The CLI is still the one that needs to

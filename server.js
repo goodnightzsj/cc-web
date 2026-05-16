@@ -3888,12 +3888,27 @@ function parseJsonlToMessages(lines) {
         if (!tc) continue;
         tc.done = true;
         let resultText = '';
+        const images = [];
         if (typeof block.content === 'string') resultText = block.content;
         else if (Array.isArray(block.content)) {
-          resultText = block.content.filter(c => c.type === 'text').map(c => c.text || '').join('');
+          for (const c of block.content) {
+            if (c?.type === 'text') resultText += (c.text || '');
+            // R63: preserve inline tool_result image blocks. CLI's image
+            // tools (ReadImage, screenshots, etc.) embed base64 source so
+            // the bubble can display them inline; previously dropped during
+            // import.
+            else if (c?.type === 'image' && c.source) {
+              images.push({
+                mediaType: c.source.media_type || c.source.mediaType || 'image/png',
+                data: c.source.data || '',
+                kind: c.source.type || 'base64',
+              });
+            }
+          }
         }
         tc.result = stripAnsi(resultText);
         if (block.is_error) tc.isError = true;
+        if (images.length) tc.images = images;
         if (top && typeof top === 'object') {
           tc.toolUseResult = {
             ...(typeof top.stdout === 'string' ? { stdout: top.stdout } : {}),
@@ -4077,6 +4092,17 @@ function parseJsonlToMessages(lines) {
         if (removed.length) parts.push(`移除 ${removed.length} 个工具`);
         messages.push({ role: 'system', kind: 'info', content: parts.join(' · '), ts: entry.timestamp || null });
       }
+      continue;
+    }
+    // R63: PR link rows from CLI's /github / git commit flow. CLI shows
+    // these as a clickable link; we render an info banner.
+    if (entry.type === 'pr-link' && entry.prUrl) {
+      messages.push({
+        role: 'system',
+        kind: 'info',
+        content: `🔗 已创建 PR #${entry.prNumber || ''}：${entry.prUrl}`,
+        ts: entry.timestamp || null,
+      });
       continue;
     }
     if (entry.type === 'rate_limit_event' || (entry.type === 'system' && entry.subtype === 'rate_limit_event')) {
@@ -4514,6 +4540,16 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
         sendSessionList(ws);
       }
     } catch {}
+    return;
+  }
+  // R63: live PR-link surfaces from /github commit/PR flow on the CLI side.
+  if (event.type === 'pr-link' && event.prUrl) {
+    wsSend(ws, {
+      type: 'system_message',
+      sessionId,
+      kind: 'info',
+      message: `🔗 已创建 PR #${event.prNumber || ''}：${event.prUrl}`,
+    });
     return;
   }
   // R63: branch hint for the chat header. Every assistant/system jsonl row
