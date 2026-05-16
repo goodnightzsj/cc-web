@@ -642,14 +642,18 @@ body {
   50%  { transform: translateY(0); opacity: 1; }
 }
 
-/* Success ✓ pulse before fading login overlay out */
+/* R77: success feedback used to scale the box from 1 → 1.02 → 1 in 280ms.
+   User read this as "the login button got bigger then snapped back" —
+   cross-platform (Android Chrome + desktop too, not just iOS Safari).
+   Replaced with a ring pulse + opacity fade so the success cue is still
+   visible but no element changes size. */
 .login-box.login-success {
   animation: login-success-pulse 0.28s ease forwards;
 }
 @keyframes login-success-pulse {
-  0%   { transform: scale(1); }
-  40%  { transform: scale(1.02); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent); }
-  100% { transform: scale(1); opacity: 0.85; }
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 38%, transparent); opacity: 1; }
+  60%  { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); opacity: 1; }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 0%, transparent); opacity: 0.85; }
 }
 
 /* Password input focus ring (more obvious than before) */
