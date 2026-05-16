@@ -2204,13 +2204,18 @@
           suppressUnreadToast: false,
           preserveStreaming: msg.sessionId === currentSessionId && msg.isRunning,
         });
-        if (!msg.historyPending) {
-          if (activeSessionLoad?.sessionId === msg.sessionId) {
-            finalizeLoadedSession(msg.sessionId);
-          } else {
-            cacheSessionSnapshot(snapshot);
-            finishSessionSwitch(msg.sessionId);
-          }
+        // R68 fix: with lazy-loaded older history, server no longer
+        // force-pushes chunks after session_info — `historyPending: true`
+        // now only means "older chunks exist and can be fetched on
+        // scroll", not "server is still streaming them". So finalize
+        // immediately to release the loading overlay; the older
+        // chunks arrive via request_older_history when the user
+        // scrolls near the top.
+        if (activeSessionLoad?.sessionId === msg.sessionId) {
+          finalizeLoadedSession(msg.sessionId);
+        } else {
+          cacheSessionSnapshot(snapshot);
+          finishSessionSwitch(msg.sessionId);
         }
         break;
 
