@@ -17,7 +17,7 @@
       document.documentElement.dataset.theme = theme;
     })();
   </script>
-  <link rel="stylesheet" href="style.81d787ee3d.css">
+  <link rel="stylesheet" href="style.acc0440dff.css">
   <link id="hljs-theme-link" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-light.min.css">
 </head>
 <body>
@@ -116,6 +116,16 @@
       <div id="cmd-menu" class="cmd-menu" hidden></div>
 
       <div class="input-area">
+        <!-- R59: live heartbeat status bar — appears only when a turn is in flight -->
+        <div id="heartbeat-bar" class="heartbeat-bar" hidden aria-live="polite">
+          <span class="hb-spinner" aria-hidden="true">✻</span>
+          <span class="hb-action" id="hb-action">Spinning…</span>
+          <span class="hb-sep" aria-hidden="true">·</span>
+          <span class="hb-time" id="hb-time">0s</span>
+          <span class="hb-sep" aria-hidden="true">·</span>
+          <span class="hb-flow" id="hb-flow"></span>
+          <span class="hb-todo" id="hb-todo" hidden></span>
+        </div>
         <div id="attachment-tray" class="attachment-tray" hidden></div>
         <div class="input-wrapper">
           <input id="image-upload-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden>
@@ -155,6 +165,6 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-  <script src="app.ad560b56cc.js"></script>
+  <script src="app.46b0dfac8c.js"></script>
 </body>
 </html>

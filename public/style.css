@@ -5106,6 +5106,85 @@ input[type="radio"]:focus-visible {
   .ssh-host-badge { max-width: 110px; }
 }
 
+/* ============ R59 — CLI-style heartbeat status bar ============
+   Single live row above the input that aggregates the in-flight signals
+   the user already gets distributed across the UI (typing indicator,
+   tok/s, ctx-meter, tool cards, TodoWrite checklist). Visible only during
+   a turn; reduced-motion safe; self-designed glyphs (no native progress). */
+.heartbeat-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  margin: 0 var(--space-5) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface-strong));
+  color: var(--text-primary);
+  font: var(--type-meta);
+  letter-spacing: var(--ls-normal);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  /* Don't push the layout — appearing/leaving should feel like a transient pill */
+  min-height: 32px;
+}
+.hb-spinner {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: var(--fs-md);
+  color: var(--accent);
+  animation: hb-rotate 1.8s linear infinite;
+  transform-origin: center;
+}
+.hb-action {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hb-sep {
+  color: var(--text-muted);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+.hb-time, .hb-flow {
+  font: var(--type-micro);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  letter-spacing: var(--ls-wide);
+}
+.hb-flow:empty { display: none; }
+.hb-flow:empty + .hb-todo { display: none; }
+.hb-todo {
+  flex-basis: 100%;
+  padding-left: 24px;
+  font: var(--type-micro);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: var(--ls-normal);
+}
+.hb-todo[hidden] { display: none; }
+@keyframes hb-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hb-spinner { animation: none; }
+}
+@media (max-width: 600px) {
+  .heartbeat-bar { margin: 0 var(--space-3) var(--space-2); padding: var(--space-2) var(--space-4); }
+  .hb-action { font-size: var(--fs-xs); }
+}
+
 /* ============ R57 — read-only CLI tail mode ============
    The button lives in the chat header next to the SSH badge; when active it
    pulses to signal that an external CLI process is the source of truth.

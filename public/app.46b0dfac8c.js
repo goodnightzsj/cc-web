@@ -1783,13 +1783,16 @@
     tailToggleBtn.dataset.active = tailing ? '1' : '0';
     tailToggleBtn.textContent = tailing ? '⏹ 停止监听' : '🔭 实时监听';
   }
-  function startTailUi() {
+  function startTailUi(reason) {
     tailing = true;
     document.body.classList.add('tail-mode-active');
     if (msgInput) msgInput.disabled = true;
     if (sendBtn) sendBtn.disabled = true;
     if (attachBtn) attachBtn.disabled = true;
-    showTailBanner('🔭 只读监听中：本地 CLI 的同会话事件会实时推送到此页面，输入框已禁用以避免双写冲突。');
+    const prefix = reason === 'auto-import'
+      ? '🔭 检测到该会话本地 CLI 仍在写入，已自动开启只读监听'
+      : '🔭 只读监听中';
+    showTailBanner(`${prefix}：来自本地 CLI 进程的新增对话/工具调用/思考将实时推送到此页面，输入框已禁用以避免双写冲突。`);
     updateTailToggleVisibility();
   }
   function stopTailUi() {
@@ -2208,6 +2211,7 @@
         if (!isGenerating) startGenerating();
         pendingText += msg.text;
         recordStreamSample(msg.text || '');
+        hbOnText(msg.text || '');
         scheduleRender();
         break;
 
@@ -2216,6 +2220,7 @@
         if (!isGenerating) startGenerating();
         pendingThinking += msg.text || '';
         recordStreamSample(msg.text || '');
+        hbOnThinking(msg.text || '');
         scheduleRender();
         break;
 
@@ -2232,6 +2237,8 @@
         if (!isGenerating) startGenerating();
         activeToolCalls.set(msg.toolUseId, { name: msg.name, input: msg.input, kind: msg.kind || null, meta: msg.meta || null, done: false });
         appendToolCall(msg.toolUseId, msg.name, msg.input, false, msg.kind || null, msg.meta || null);
+        hbOnToolStart(msg.name);
+        if (msg.name === 'TodoWrite' || msg.name === 'update_plan') hbOnTodoSnapshot(msg.input);
         break;
 
       case 'tool_end':
@@ -2249,6 +2256,7 @@
           // R52: capture R51 toolUseResult enrichment so updateToolCall can
           // render stdout/stderr/exitCode/interrupted/isImage panels.
           if (msg.toolUseResult) tc.toolUseResult = msg.toolUseResult;
+          hbOnToolDone(tc.name);
         }
         updateToolCall(msg.toolUseId, msg.result, {
           truncated: !!msg.resultTruncated,
@@ -2301,7 +2309,7 @@
         break;
 
       case 'tail_started':
-        startTailUi();
+        startTailUi(msg.reason || 'manual');
         break;
       case 'tail_stopped':
         stopTailUi();
@@ -2309,6 +2317,18 @@
       case 'tail_error':
         stopTailUi();
         appendSystemMessage('实时监听失败：' + (msg.message || ''), 'error', 'unknown', null, null);
+        break;
+      case 'tail_user_message':
+        // R60: a new user message arrived from the external CLI side. Append
+        // it as a static user bubble — we are NOT the writer, so this is
+        // the only way that message enters this view.
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        {
+          const welcome = messagesDiv.querySelector('.welcome-msg');
+          if (welcome) welcome.remove();
+          messagesDiv.appendChild(createMsgElement('user', msg.text || '', []));
+          scrollToBottom();
+        }
         break;
 
       case 'usage_detail':
@@ -2479,6 +2499,122 @@
     }
   }
 
+  // --- R59: heartbeat status bar (CLI-style live action / timer / token / todo)
+  // All signals are derived from events the client already receives — no new
+  // server-side protocol. The bar lives above the input area, only visible
+  // during an in-flight turn.
+  const heartbeatBar = $('#heartbeat-bar');
+  const hbActionEl = $('#hb-action');
+  const hbTimeEl = $('#hb-time');
+  const hbFlowEl = $('#hb-flow');
+  const hbTodoEl = $('#hb-todo');
+  const heartbeat = {
+    turnStartAt: 0,
+    timer: null,
+    actionRaw: '',
+    actionLast: 0,
+    outputChars: 0,
+    inputChars: 0,
+    inProgressTodo: '',
+    direction: 'down', // 'down' = output streaming, 'up' = thinking/no-text
+  };
+  function hbFormatTime(ms) {
+    if (ms < 1000) return '0s';
+    const s = Math.floor(ms / 1000);
+    if (s < 60) return `${s}s`;
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}m ${r.toString().padStart(2, '0')}s`;
+  }
+  function hbFormatTokens(chars) {
+    if (chars <= 0) return '';
+    const tok = chars / 4; // rough char→token ratio for mixed CJK + en
+    if (tok < 1000) return `~${Math.round(tok)} tok`;
+    return `~${(tok / 1000).toFixed(1)}k tok`;
+  }
+  function hbSetAction(text, kind) {
+    const now = Date.now();
+    // Throttle to 4Hz so rapid thinking_delta doesn't thrash the DOM, but
+    // tool_start / tool_done jump through immediately for the perceived
+    // "I'm doing X now" snap.
+    if (kind !== 'tool' && now - heartbeat.actionLast < 250) return;
+    heartbeat.actionLast = now;
+    heartbeat.actionRaw = text;
+    hbActionEl.textContent = text;
+  }
+  function hbTick() {
+    if (!isGenerating) return;
+    const elapsed = Date.now() - heartbeat.turnStartAt;
+    hbTimeEl.textContent = hbFormatTime(elapsed);
+    const arrow = heartbeat.direction === 'up' ? '↑' : '↓';
+    const chars = heartbeat.direction === 'up' ? heartbeat.inputChars : heartbeat.outputChars;
+    const tokStr = hbFormatTokens(chars);
+    hbFlowEl.textContent = tokStr ? `${arrow} ${tokStr}` : '';
+  }
+  function hbStart() {
+    heartbeat.turnStartAt = Date.now();
+    heartbeat.actionRaw = 'Spinning…';
+    heartbeat.actionLast = 0;
+    heartbeat.outputChars = 0;
+    heartbeat.inputChars = 0;
+    heartbeat.direction = 'up';
+    heartbeat.inProgressTodo = '';
+    hbActionEl.textContent = 'Spinning…';
+    hbTimeEl.textContent = '0s';
+    hbFlowEl.textContent = '';
+    hbTodoEl.hidden = true;
+    hbTodoEl.textContent = '';
+    heartbeatBar.hidden = false;
+    if (heartbeat.timer) clearInterval(heartbeat.timer);
+    heartbeat.timer = setInterval(hbTick, 1000);
+  }
+  function hbStop() {
+    heartbeatBar.hidden = true;
+    if (heartbeat.timer) { clearInterval(heartbeat.timer); heartbeat.timer = null; }
+  }
+  function hbOnText(text) {
+    heartbeat.outputChars += (text || '').length;
+    heartbeat.direction = 'down';
+    hbSetAction('生成回复…');
+    hbTick();
+  }
+  function hbOnThinking(text) {
+    heartbeat.inputChars += (text || '').length;
+    heartbeat.direction = 'up';
+    // Take the trailing words of the thinking stream as the "action" so the
+    // user sees what the model is currently reasoning about. Mirrors CLI's
+    // short summary on the spinner line.
+    const cleaned = (text || '').replace(/\s+/g, ' ').trim();
+    if (cleaned) {
+      const tail = heartbeat.actionRaw.endsWith('…') ? '' : heartbeat.actionRaw;
+      const joined = (tail + cleaned).slice(-60);
+      hbSetAction(joined + (joined.length >= 60 ? '…' : ''));
+    }
+    hbTick();
+  }
+  function hbOnToolStart(name) {
+    hbSetAction(`调用 ${name}…`, 'tool');
+  }
+  function hbOnToolDone(name) {
+    hbSetAction('Spinning…', 'tool');
+  }
+  function hbOnTodoSnapshot(input) {
+    const todos = extractTodos(input);
+    if (!todos) return;
+    const inProgress = todos.find((t) => {
+      const s = (t.status || '').toLowerCase().replace(/[-\s]/g, '_');
+      return s === 'in_progress' || s === 'doing' || s === 'active';
+    });
+    if (inProgress) {
+      heartbeat.inProgressTodo = inProgress.activeForm || inProgress.content || '';
+      hbTodoEl.textContent = '⎿ ◼ ' + heartbeat.inProgressTodo.slice(0, 80);
+      hbTodoEl.hidden = false;
+    } else {
+      heartbeat.inProgressTodo = '';
+      hbTodoEl.hidden = true;
+    }
+  }
+
   // --- Generating State ---
   function startGenerating() {
     isGenerating = true;
@@ -2490,6 +2626,7 @@
     hasGrouped = false;
     sendBtn.hidden = true;
     abortBtn.hidden = false;
+    hbStart();
     // 不禁用输入框，允许用户继续输入（但无法发送）
 
     const welcome = messagesDiv.querySelector('.welcome-msg');
@@ -2528,6 +2665,7 @@
     abortBtn.hidden = true;
     setCurrentSessionRunningState(false);
     stopStreamRate();
+    hbStop();
     msgInput.focus();
     // R21: WCAG 4.1.3 Status Messages — announce completion exactly once per turn.
     // Clear-then-set with microdelay so SR re-reads even if last text was identical.

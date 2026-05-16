@@ -3892,39 +3892,89 @@ function handleAttachTail(ws, msg) {
   const prev = externalTails.get(ws);
   if (prev) prev.stop();
 
-  // Pseudo entry so processClaudeEvent can dispatch its usual events through
-  // wsSend. NOT registered in activeProcesses — abort/send_message are inert.
-  // wsSendR's R33 persistence path is keyed off entry.sessionId + loadSession,
-  // and we explicitly want the live CLI process to remain the sole writer of
-  // session.messages, so we set sessionId = null to bypass R33's persistence
-  // branch. The browser still gets the live events.
+  startTailFor(ws, sessionId, meta.filePath, { reason: 'manual' });
+}
+
+// R60: shared tail starter — also reused by import_native_session's auto-attach.
+// `startFromEnd:true` is critical: the jsonl is full of completed historical
+// rows that the import path has already turned into session.messages; replaying
+// them through processClaudeEvent (which treats every assistant text block as
+// a streaming delta) would duplicate the entire transcript and never finalize
+// the streaming-msg because jsonl has no SDK-style result events.
+function startTailFor(ws, sessionId, filePath, { reason = 'manual' } = {}) {
+  // Pseudo entry whose sessionId stays null so wsSendR's R33 persistence
+  // branch is bypassed — the external CLI remains the sole writer of
+  // session.messages on disk. The browser still gets live events because
+  // text_delta / thinking_delta / tool_start / tool_end use plain wsSend
+  // with an explicit sessionId param.
   const pseudoEntry = {
-    pid: -1,
-    ws,
-    sessionId: null,           // disables wsSendR R33 persistence
+    pid: -1, ws,
+    sessionId: null,
     agent: 'claude',
-    fullText: '',
-    fullThinking: '',
-    toolCalls: [],
-    lastCost: null,
-    lastUsage: null,
-    lastError: null,
-    errorSent: false,
-    external: true,
+    fullText: '', fullThinking: '',
+    toolCalls: [], lastCost: null, lastUsage: null, lastError: null,
+    errorSent: false, external: true,
   };
 
   const tail = createCliTail({
-    jsonlPath: meta.filePath,
+    jsonlPath: filePath,
+    startFromEnd: true,
     onEvent(event) {
-      try { processClaudeEvent(pseudoEntry, event, sessionId); } catch (e) { plog?.('WARN', 'tail_dispatch_err', { err: String(e?.message || e) }); }
+      try { processTailEvent(event, pseudoEntry, ws, sessionId); }
+      catch (e) { plog?.('WARN', 'tail_dispatch_err', { err: String(e?.message || e) }); }
     },
     onError(err) {
       wsSend(ws, { type: 'tail_error', message: String(err?.message || err) });
     },
   });
   externalTails.set(ws, tail);
-  wsSend(ws, { type: 'tail_started', sessionId, jsonlPath: meta.filePath });
-  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: meta.filePath });
+  wsSend(ws, { type: 'tail_started', sessionId, jsonlPath: filePath, reason });
+  plog('INFO', 'attach_tail', { sessionId: sessionId.slice(0, 8), jsonlPath: filePath, reason });
+}
+
+// R60: classify a single jsonl line and route it to the right pipeline.
+//   - user rows → forward text content as `tail_user_message` so the client
+//     appends a user bubble (CLI-side typing was its source, not this UI);
+//     tool_result blocks still go through processClaudeEvent so cc-web's
+//     existing tool-result handler can mark the tool chip as done.
+//   - assistant rows → reset the pseudo entry's per-turn buffers, replay the
+//     row through processClaudeEvent (text/thinking/tool_use), then emit
+//     a synthetic `done` when stop_reason is terminal so the streaming-msg
+//     gets finalized. jsonl never carries SDK's `result` event, which is
+//     why the prior R57 implementation left every assistant row open.
+//   - everything else passes through processClaudeEvent (system init,
+//     compact_summary, hook_response, rate_limit_event, etc).
+function processTailEvent(event, pseudoEntry, ws, sessionId) {
+  if (!event || !event.type) return;
+  if (event.type === 'user') {
+    const raw = event.message?.content;
+    let text = '';
+    if (typeof raw === 'string') text = raw;
+    else if (Array.isArray(raw)) {
+      text = raw.filter(b => b && b.type === 'text').map(b => b.text || '').join('');
+    }
+    if (text.trim()) {
+      wsSend(ws, { type: 'tail_user_message', text, sessionId, ts: event.timestamp || null });
+    }
+    // Defer to processClaudeEvent so tool_result blocks update existing
+    // tool chips through R51's processToolResultBlock.
+    processClaudeEvent(pseudoEntry, event, sessionId);
+    return;
+  }
+  if (event.type === 'assistant') {
+    pseudoEntry.fullText = '';
+    pseudoEntry.fullThinking = '';
+    pseudoEntry.toolCalls = [];
+    processClaudeEvent(pseudoEntry, event, sessionId);
+    const stop = event.message?.stop_reason;
+    if (stop && stop !== 'tool_use') {
+      // Terminal stop_reason — close the streaming-msg. Pass costUsd:null
+      // because jsonl rows don't carry per-turn cost (it lived on result).
+      wsSend(ws, { type: 'done', sessionId, costUsd: null });
+    }
+    return;
+  }
+  processClaudeEvent(pseudoEntry, event, sessionId);
 }
 
 function handleDetachTail(ws) {
@@ -4220,8 +4270,23 @@ function handleImportNativeSession(ws, msg) {
     taskMode: session.taskMode || 'local',
     sshHostId: session.sshHostId || '',
     remoteCwd: session.remoteCwd || '',
+    canTailExternal: true,
   });
   sendSessionList(ws);
+
+  // R60: if the CLI process is still writing this jsonl (mtime within 90s),
+  // auto-attach a read-only tail so the user immediately sees subsequent
+  // turns without having to click 🔭. Threshold is generous because a slow
+  // model response may go 30-60s between writes mid-turn.
+  try {
+    const stat = fs.statSync(filePath);
+    const ageMs = Date.now() - stat.mtimeMs;
+    if (ageMs < 90_000) {
+      const prev = externalTails.get(ws);
+      if (prev) prev.stop();
+      startTailFor(ws, id, filePath, { reason: 'auto-import' });
+    }
+  } catch {}
 }
 
 function handleListCodexSessions(ws) {
