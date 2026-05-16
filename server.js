@@ -3220,7 +3220,17 @@ function handleDeleteSession(ws, sessionId) {
         removedDbRows: result.removedDbRows,
       });
     } else {
-      deleteClaudeLocalSession(session?.claudeSessionId || null);
+      // R65: only purge the original CLI jsonl when this cc-web session was
+      // born of a cc-web spawn (i.e. cc-web is the sole owner). If
+      // session.importedFrom is set the jsonl was authored by an external
+      // CLI process — deleting it from cc-web would also strip the
+      // operator's local `claude` /resume capability, which is destructive
+      // far beyond the user's "remove this card from cc-web" intent.
+      // The R58 `delete_native_session` path is the only correct way to
+      // remove an imported jsonl, and it requires explicit {confirm:true}.
+      if (!session?.importedFrom) {
+        deleteClaudeLocalSession(session?.claudeSessionId || null);
+      }
     }
     sendSessionList(ws);
   } catch {
@@ -3885,6 +3895,19 @@ function parseJsonlToMessages(lines) {
           continue;
         }
       }
+      // R63 self-test fix: jsonl writes the interrupt sentinel as a
+      // single-element text-block array, not a bare string. Mirror
+      // isInterruptUserEvent's array-shape detection so import sees
+      // the abort kind just like the live tail path does.
+      if (isInterruptUserEvent(entry)) {
+        messages.push({
+          role: 'system',
+          kind: 'abort',
+          content: '⏹ 已被用户中止',
+          ts: entry.timestamp || null,
+        });
+        continue;
+      }
       let content = '';
       const toolResults = [];
       const userAttachments = [];
@@ -4167,7 +4190,23 @@ function parseJsonlToMessages(lines) {
     // Unhandled types deliberately drop: queue-operation / last-prompt /
     // file-history-snapshot etc. carry no user-visible info.
   }
-  return { messages, finalTitle, finalPermissionMode, totalUsage, lastModel };
+  // R64: hard cap on retained messages so a huge file doesn't blow up
+  // session.json on disk or the wire payload. Keep the tail (most recent
+  // is what the user usually wants) and prepend a marker explaining the
+  // truncation so the UI is honest about what's missing.
+  let truncated = false;
+  if (messages.length > MAX_IMPORT_MESSAGES) {
+    const dropped = messages.length - MAX_IMPORT_MESSAGES;
+    truncated = true;
+    messages.splice(0, dropped);
+    messages.unshift({
+      role: 'system',
+      kind: 'info',
+      content: `⚠ 历史过长，已截断最早的 ${dropped} 条；仅保留最近 ${MAX_IMPORT_MESSAGES} 条`,
+      ts: null,
+    });
+  }
+  return { messages, finalTitle, finalPermissionMode, totalUsage, lastModel, truncated };
 }
 
 const {
@@ -4839,6 +4878,12 @@ function handleDeleteNativeSession(ws, msg) {
   handleListNativeSessions(ws);
 }
 
+// R64: hard cap on import size. Loading a 91MB jsonl into a single string +
+// running split('\n') + JSON.parse on every row blew past the systemd
+// MemoryMax=1G limit during automated testing (V8 OOM crash). 50MB still
+// produces a healthy session (~5000 turns) without risking the heap.
+const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
+const MAX_IMPORT_MESSAGES = 5000;
 function handleImportNativeSession(ws, msg) {
   const { sessionId, projectDir } = msg;
   if (!sessionId || !projectDir) {
@@ -4848,6 +4893,18 @@ function handleImportNativeSession(ws, msg) {
   if (!filePath.startsWith(CLAUDE_PROJECTS_DIR)) {
     return wsSend(ws, { type: 'error', message: '非法路径' });
   }
+  // Refuse oversized files up front — keeps memory bounded and gives a clear
+  // error instead of letting V8 OOM the whole service.
+  try {
+    const preStat = fs.statSync(filePath);
+    if (preStat.size > MAX_IMPORT_BYTES) {
+      const mb = (preStat.size / 1024 / 1024).toFixed(1);
+      return wsSend(ws, {
+        type: 'error',
+        message: `会话文件过大（${mb} MB > ${MAX_IMPORT_BYTES / 1024 / 1024} MB）。建议在 CLI 端 /compact 后再导入，或直接使用实时 tail 模式查看新增内容。`,
+      });
+    }
+  } catch {}
   let content;
   try { content = fs.readFileSync(filePath, 'utf8'); } catch {
     return wsSend(ws, { type: 'error', message: '无法读取会话文件' });
