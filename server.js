@@ -3829,15 +3829,27 @@ function parseJsonlToMessages(lines) {
   const messages = [];
   let finalTitle = null;
   let finalPermissionMode = null;
+  let totalUsage = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cachedInputTokens: 0 };
+  let lastModel = null;
   // Track latest seen tool_use input by id so the matching tool_result block
   // can hang off the same assistant message in the right order.
   const toolUseIndex = new Map(); // id → { msgIdx, callIdx }
+  // R63: dedupe by message.id — CLI occasionally retries (e.g. on transient
+  // overload) and writes the same msg_xxx row twice. Without this the bubble
+  // duplicates inside cc-web's transcript.
+  const seenMessageIds = new Set();
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     let entry;
     try { entry = JSON.parse(trimmed); } catch { continue; }
+    // R63: skip sub-agent rows. The Task tool's child events are tagged
+    // isSidechain:true so the parent transcript shouldn't include them
+    // verbatim — the parent Task tool card already gives the user a
+    // collapsed view, and inlining the child would double-display the
+    // sub-agent's entire monologue.
+    if (entry.isSidechain) continue;
 
     // ---- USER ----
     if (entry.type === 'user') {
@@ -3929,6 +3941,21 @@ function parseJsonlToMessages(lines) {
     if (entry.type === 'assistant') {
       const blocks = entry.message?.content;
       if (!Array.isArray(blocks)) continue;
+      // Dedupe by SDK message id (CLI retry writes identical lines).
+      const mid = entry.message?.id;
+      if (mid && seenMessageIds.has(mid)) continue;
+      if (mid) seenMessageIds.add(mid);
+      // Accumulate usage so the imported session has the right totals
+      // (otherwise totalUsage = 0 until the next live turn).
+      const u = entry.message?.usage;
+      if (u && typeof u === 'object') {
+        totalUsage.inputTokens += u.input_tokens || 0;
+        totalUsage.outputTokens += u.output_tokens || 0;
+        totalUsage.cacheCreationTokens += u.cache_creation_input_tokens || 0;
+        totalUsage.cacheReadTokens += u.cache_read_input_tokens || 0;
+        totalUsage.cachedInputTokens += (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+      }
+      if (entry.message?.model) lastModel = entry.message.model;
       let content = '';
       let thinking = '';
       const toolCalls = [];
@@ -4116,9 +4143,9 @@ function parseJsonlToMessages(lines) {
       continue;
     }
     // Unhandled types deliberately drop: queue-operation / last-prompt /
-    // file-history-snapshot / pr-link etc. carry no user-visible info.
+    // file-history-snapshot etc. carry no user-visible info.
   }
-  return { messages, finalTitle, finalPermissionMode };
+  return { messages, finalTitle, finalPermissionMode, totalUsage, lastModel };
 }
 
 const {
@@ -4305,6 +4332,11 @@ function isLocalCommandCaveat(content) {
 
 function processTailEvent(event, pseudoEntry, ws, sessionId) {
   if (!event || !event.type) return;
+  // R63: sub-agent rows are tagged isSidechain:true. The parent Task card
+  // already gives the user a collapsed view of the spawn; inlining the
+  // child's thinking/tool calls would double-display them and confuse
+  // turn boundaries on the live path.
+  if (event.isSidechain) return;
   if (event.type === 'user') {
     if (isInterruptUserEvent(event)) {
       // Mirror cc-web's local abort flow: surface the interrupt marker,
@@ -4800,9 +4832,10 @@ function handleImportNativeSession(ws, msg) {
   }
   const lines = content.split('\n');
   // R63: parseJsonlToMessages now returns rich messages + late session
-  // metadata (ai-title / final permission mode). Use those to fill the
-  // session record instead of re-scanning the file manually.
-  const { messages, finalTitle, finalPermissionMode } = parseJsonlToMessages(lines);
+  // metadata (ai-title / final permission mode + accumulated usage +
+  // last seen model). Use those to fill the session record instead of
+  // re-scanning the file manually.
+  const { messages, finalTitle, finalPermissionMode, totalUsage: importedUsage, lastModel } = parseJsonlToMessages(lines);
 
   // Find or create cc-web session with this claudeSessionId
   let existingSession = null;
@@ -4856,10 +4889,14 @@ function handleImportNativeSession(ws, msg) {
     claudeSessionId: sessionId,
     codexThreadId: null,
     importedFrom: projectDir,
-    model: existingSession?.model || null,
+    // R63: prefer the model the CLI was actually using when this jsonl was
+    // written; fall back to whatever the cc-web session already had.
+    model: lastModel || existingSession?.model || null,
     permissionMode: resolvedMode,
     totalCost: existingSession?.totalCost || 0,
-    totalUsage: existingSession?.totalUsage || { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
+    // R63: totalUsage accumulated from every assistant row's usage block —
+    // otherwise the imported session shows 0 tokens until the next live turn.
+    totalUsage: importedUsage,
     messages,
     cwd: cwd || existingSession?.cwd || null,
   };
