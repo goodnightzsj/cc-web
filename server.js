@@ -3847,6 +3847,7 @@ function parseJsonlToMessages(lines) {
   let finalPermissionMode = null;
   let totalUsage = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, cachedInputTokens: 0 };
   let lastModel = null;
+  let lastGitBranch = null;
   // Track latest seen tool_use input by id so the matching tool_result block
   // can hang off the same assistant message in the right order.
   const toolUseIndex = new Map(); // id → { msgIdx, callIdx }
@@ -3866,6 +3867,9 @@ function parseJsonlToMessages(lines) {
     // collapsed view, and inlining the child would double-display the
     // sub-agent's entire monologue.
     if (entry.isSidechain) continue;
+    // Track the latest gitBranch seen so the import promotes it onto
+    // session.gitBranch (header chip paints on first load).
+    if (entry.gitBranch && typeof entry.gitBranch === 'string') lastGitBranch = entry.gitBranch;
 
     // ---- USER ----
     if (entry.type === 'user') {
@@ -4206,7 +4210,7 @@ function parseJsonlToMessages(lines) {
       ts: null,
     });
   }
-  return { messages, finalTitle, finalPermissionMode, totalUsage, lastModel, truncated };
+  return { messages, finalTitle, finalPermissionMode, totalUsage, lastModel, lastGitBranch, truncated };
 }
 
 const {
@@ -4398,6 +4402,21 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
   // child's thinking/tool calls would double-display them and confuse
   // turn boundaries on the live path.
   if (event.isSidechain) return;
+  // R63 self-test fix: branch tracking must run BEFORE the per-type
+  // dispatch's early returns, otherwise an assistant/system row that
+  // carries a new gitBranch would emit its own kind events but the
+  // branch chip update would be silently dropped.
+  if (event.gitBranch && typeof event.gitBranch === 'string' && pseudoEntry.lastGitBranch !== event.gitBranch) {
+    pseudoEntry.lastGitBranch = event.gitBranch;
+    wsSend(ws, { type: 'git_branch_changed', sessionId, gitBranch: event.gitBranch });
+    try {
+      const sess = loadSession(sessionId);
+      if (sess && sess.gitBranch !== event.gitBranch) {
+        sess.gitBranch = event.gitBranch;
+        saveSession(sess);
+      }
+    } catch {}
+  }
   if (event.type === 'user') {
     if (isInterruptUserEvent(event)) {
       // Mirror cc-web's local abort flow: surface the interrupt marker,
@@ -4645,26 +4664,9 @@ function processTailEvent(event, pseudoEntry, ws, sessionId) {
     });
     return;
   }
-  // R63: branch hint for the chat header. Every assistant/system jsonl row
-  // carries the cwd's git branch at that moment; reflecting changes mirrors
-  // what the CLI's status line shows. Persist into session so a page
-  // reload still shows the correct branch in the header without waiting
-  // for the next jsonl event.
-  if (event.gitBranch && typeof event.gitBranch === 'string' && pseudoEntry.lastGitBranch !== event.gitBranch) {
-    pseudoEntry.lastGitBranch = event.gitBranch;
-    wsSend(ws, {
-      type: 'git_branch_changed',
-      sessionId,
-      gitBranch: event.gitBranch,
-    });
-    try {
-      const sess = loadSession(sessionId);
-      if (sess && sess.gitBranch !== event.gitBranch) {
-        sess.gitBranch = event.gitBranch;
-        saveSession(sess);
-      }
-    } catch {}
-  }
+  // (gitBranch tracking moved to the top of processTailEvent so it survives
+  // the per-type early returns. Kept here intentionally blank so the diff
+  // doesn't lose the comment trail for anyone tracing R63 history.)
   processClaudeEvent(pseudoEntry, event, sessionId);
 }
 
@@ -4914,7 +4916,7 @@ function handleImportNativeSession(ws, msg) {
   // metadata (ai-title / final permission mode + accumulated usage +
   // last seen model). Use those to fill the session record instead of
   // re-scanning the file manually.
-  const { messages, finalTitle, finalPermissionMode, totalUsage: importedUsage, lastModel } = parseJsonlToMessages(lines);
+  const { messages, finalTitle, finalPermissionMode, totalUsage: importedUsage, lastModel, lastGitBranch } = parseJsonlToMessages(lines);
 
   // Find or create cc-web session with this claudeSessionId
   let existingSession = null;
@@ -4978,6 +4980,9 @@ function handleImportNativeSession(ws, msg) {
     totalUsage: importedUsage,
     messages,
     cwd: cwd || existingSession?.cwd || null,
+    // R63 self-test fix: seed gitBranch from the jsonl so the header chip
+    // paints on first load (before any live tail event arrives).
+    gitBranch: lastGitBranch || existingSession?.gitBranch || null,
   };
   saveSession(session);
   wsSessionMap.set(ws, id);
