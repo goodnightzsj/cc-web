@@ -1647,6 +1647,10 @@
       cacheSessionSnapshot(activeSessionLoad.snapshot);
     }
     finishSessionSwitch(sessionId);
+    // R69: if the initial INITIAL_HISTORY_COUNT messages don't fill the
+    // viewport, no scroll event will ever fire — proactively pump in
+    // the next older chunk so the user can actually see older history.
+    setTimeout(() => maybeFetchOlderHistory({ force: false }), 60);
   }
 
   function beginSessionSwitch(sessionId, options = {}) {
@@ -4371,10 +4375,16 @@
   // requests while one is in flight.
   let olderHistoryInFlight = false;
   let olderHistoryExhausted = false;
-  function maybeFetchOlderHistory() {
+  function maybeFetchOlderHistory(opts = {}) {
     if (olderHistoryInFlight || olderHistoryExhausted) return;
     if (!currentSessionId) return;
-    if (messagesDiv.scrollTop > 240) return;
+    // R69: an under-filled viewport (12 system messages on a 14k-row
+    // session) renders to ~947px and never generates a scroll event,
+    // so the user couldn't reach more history. Force-fetch in that
+    // case OR when scrolled near the top.
+    const underFilled = messagesDiv.scrollHeight <= messagesDiv.clientHeight + 40;
+    const nearTop = messagesDiv.scrollTop <= 240;
+    if (!underFilled && !nearTop && !opts.force) return;
     olderHistoryInFlight = true;
     showOlderHistoryHint(true);
     send({ type: 'request_older_history', sessionId: currentSessionId });
@@ -4408,6 +4418,13 @@
     }
     if (msg.remaining === 0) olderHistoryExhausted = true;
     showOlderHistoryHint(!olderHistoryExhausted && olderHistoryInFlight);
+    // R69: keep pumping until viewport is filled (or queue exhausted).
+    // Without this a session whose 12+24+... rows are mostly empty
+    // system bubbles would still leave a half-empty scrollable area
+    // with no scroll handle for the user to grab.
+    if (!olderHistoryExhausted) {
+      setTimeout(() => maybeFetchOlderHistory(), 60);
+    }
   };
   window.__ccwebResetHistoryState = resetOlderHistoryState;
 
