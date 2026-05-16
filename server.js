@@ -3944,9 +3944,45 @@ function startTailFor(ws, sessionId, filePath, { reason = 'manual' } = {}) {
 //     why the prior R57 implementation left every assistant row open.
 //   - everything else passes through processClaudeEvent (system init,
 //     compact_summary, hook_response, rate_limit_event, etc).
+// R61: CLI writes a synthetic user line `[Request interrupted by user]` when
+// the operator hits ESC mid-turn. Distinct from a real user message — and
+// the prior assistant row carried stop_reason:'tool_use', so the tail
+// pipeline's "emit done only when stop_reason is terminal" rule would
+// otherwise leave the streaming-msg open forever. Match the exact CLI
+// sentinel (English locale; CLI does not translate it).
+const TAIL_INTERRUPT_TEXT = '[Request interrupted by user]';
+function isInterruptUserEvent(event) {
+  const raw = event?.message?.content;
+  if (!Array.isArray(raw) || raw.length !== 1) return false;
+  const blk = raw[0];
+  return blk && blk.type === 'text' && (blk.text || '').trim() === TAIL_INTERRUPT_TEXT;
+}
+
 function processTailEvent(event, pseudoEntry, ws, sessionId) {
   if (!event || !event.type) return;
   if (event.type === 'user') {
+    if (isInterruptUserEvent(event)) {
+      // Mirror cc-web's local abort flow: surface the interrupt marker,
+      // mark any in-flight tool_use as interrupted, finalize the streaming
+      // bubble. We pass `interruptedToolUseIds` so client can stamp the
+      // matching chips even when no jsonl tool_result row will ever follow.
+      const interruptedIds = (pseudoEntry.toolCalls || [])
+        .filter(t => !t.done)
+        .map(t => t.id);
+      wsSend(ws, {
+        type: 'tail_interrupted',
+        sessionId,
+        ts: event.timestamp || null,
+        interruptedToolUseIds: interruptedIds,
+      });
+      // Synthetic turn-end so streaming-msg closes and heartbeat-bar hides.
+      wsSend(ws, { type: 'done', sessionId, costUsd: null });
+      // Reset per-turn buffers — the next jsonl event starts a fresh turn.
+      pseudoEntry.fullText = '';
+      pseudoEntry.fullThinking = '';
+      pseudoEntry.toolCalls = [];
+      return;
+    }
     const raw = event.message?.content;
     let text = '';
     if (typeof raw === 'string') text = raw;

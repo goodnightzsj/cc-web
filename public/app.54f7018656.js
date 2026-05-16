@@ -2331,6 +2331,43 @@
         }
         break;
 
+      case 'tail_interrupted':
+        // R61: user pressed ESC on the CLI side. Match cc-web's local abort
+        // flow visually — stamp the in-flight assistant bubble with the
+        // existing "已被用户中止" badge, mark any unfinished tool chips as
+        // interrupted, and finalize the turn (the server already follows
+        // up with `{type:'done'}` to close streaming-msg / hide heartbeat).
+        if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
+        {
+          const streamEl = document.getElementById('streaming-msg');
+          if (streamEl) {
+            streamEl.dataset.aborted = '1';
+            const bubble = streamEl.querySelector('.msg-bubble');
+            if (bubble && !bubble.querySelector('.msg-aborted-badge')) {
+              const badge = document.createElement('div');
+              badge.className = 'msg-aborted-badge';
+              badge.textContent = '⏹ 已被用户中止';
+              bubble.appendChild(badge);
+            }
+          }
+          const ids = Array.isArray(msg.interruptedToolUseIds) ? msg.interruptedToolUseIds : [];
+          for (const id of ids) {
+            const tc = activeToolCalls.get(id);
+            if (tc && !tc.done) {
+              tc.done = true;
+              tc.isError = true;
+              tc.toolUseResult = Object.assign({}, tc.toolUseResult || {}, { interrupted: true });
+            }
+            // Reuse R52's toolUseResult.interrupted path so the chip shows the
+            // canonical "⏹ 已中断" badge consistent with native CLI runs.
+            updateToolCall(id, '⏹ 已被用户中止', {
+              isError: true,
+              toolUseResult: { interrupted: true },
+            });
+          }
+        }
+        break;
+
       case 'usage_detail':
         // R40: rich per-turn metrics from CLI 'result' event. Drives ctx-meter.
         if (msg.sessionId && currentSessionId && msg.sessionId !== currentSessionId) break;
