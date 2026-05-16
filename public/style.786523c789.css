@@ -557,7 +557,12 @@ body {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-xl);
   color: var(--text-primary);
-  font-size: var(--fs-lg);
+  /* R76: must be ≥16px on iOS Safari — anything smaller forces an
+     auto-zoom into the input on focus, which then makes the entire
+     page (including the login button) render scaled up. The user
+     reported this as "button gets bigger after one click", but the
+     real source is the input focus zoom of the iOS viewport. */
+  font-size: 16px;
   outline: none;
   margin-bottom: var(--space-5);
   transition: border-color var(--dur-emphasis);
@@ -570,9 +575,17 @@ body {
   color: #fff;
   border: none;
   border-radius: var(--radius-xl);
-  font-size: var(--fs-lg);
+  /* R76: 16px ceiling here too — same iOS auto-zoom trigger as the
+     input above (a button between two zoom-triggering inputs would
+     itself become a zoom anchor). */
+  font-size: 16px;
   font-weight: var(--fw-semibold);
   cursor: pointer;
+  /* R76: kill the iOS double-tap zoom delay so the press → translateY
+     1px reads instantly instead of after a 300ms pause that the user
+     might interpret as "button suddenly grew then settled". */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
   transition: background var(--dur-emphasis), transform 0.08s ease, box-shadow var(--dur-emphasis) ease;
   position: relative;
   overflow: hidden;
