@@ -1006,6 +1006,28 @@ const SETTINGS_API_KEYS = ['ANTHROPIC_AUTH_TOKEN','ANTHROPIC_API_KEY','ANTHROPIC
   'ANTHROPIC_DEFAULT_OPUS_MODEL','ANTHROPIC_DEFAULT_SONNET_MODEL','ANTHROPIC_DEFAULT_HAIKU_MODEL',
   'ANTHROPIC_REASONING_MODEL'];
 
+function readClaudeSettingsEnv() {
+  try {
+    if (!fs.existsSync(CLAUDE_SETTINGS_PATH)) return null;
+    const settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf8'));
+    const env = settings.env || {};
+    // Always capture every SETTINGS_API_KEYS field, even when local mode
+    // uses OAuth (no apiKey/apiBase).  Otherwise model preferences
+    // (ANTHROPIC_MODEL etc.) are silently dropped on the round-trip
+    // local → custom → local.
+    const hasAnyApiOverride = SETTINGS_API_KEYS.some(k => env[k]);
+    if (!hasAnyApiOverride) return null;
+    return {
+      apiKey: env.ANTHROPIC_AUTH_TOKEN || env.ANTHROPIC_API_KEY || '',
+      apiBase: env.ANTHROPIC_BASE_URL || '',
+      defaultModel: env.ANTHROPIC_MODEL || '',
+      opusModel: env.ANTHROPIC_DEFAULT_OPUS_MODEL || '',
+      sonnetModel: env.ANTHROPIC_DEFAULT_SONNET_MODEL || '',
+      haikuModel: env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '',
+    };
+  } catch { return null; }
+}
+
 function applyCustomTemplateToSettings(tpl) {
   let settings = {};
   try { settings = JSON.parse(fs.readFileSync(CLAUDE_SETTINGS_PATH, 'utf8')); } catch {}
@@ -2347,17 +2369,35 @@ function handleSaveModelConfig(ws, newConfig) {
     });
   }
 
+  // Switching from local → custom: auto-save current ~/.claude/settings.json
+  // as localSnapshot BEFORE the template overwrites it.  This mirrors
+  // cc-switch's "each provider IS a saved profile" model — the CC profile
+  // is always preserved and can be restored one-click.  No manual
+  // "save snapshot" needed.
+  if (merged.mode === 'custom' && merged.activeTemplate && current.mode === 'local') {
+    const localSettings = readClaudeSettingsEnv();
+    if (localSettings) {
+      merged.localSnapshot = localSettings;
+    }
+  }
+
   saveModelConfig(merged);
 
   // Re-apply at runtime (mutate in-place to preserve agent-runtime closure reference)
-  MODEL_MAP.opus = 'claude-opus-4-6';
-  MODEL_MAP.sonnet = 'claude-sonnet-4-6';
+  MODEL_MAP.opus = 'claude-opus-4-7[1m]';
+  MODEL_MAP.sonnet = 'claude-sonnet-4-6[1m]';
   MODEL_MAP.haiku = 'claude-haiku-4-5-20251001';
   applyModelConfig();
-  // custom mode: write to ~/.claude/settings.json immediately on save
+  // custom mode: write template to ~/.claude/settings.json
   if (merged.mode === 'custom' && merged.activeTemplate) {
     const tpl = merged.templates.find(t => t.name === merged.activeTemplate);
     if (tpl) applyCustomTemplateToSettings(tpl);
+  }
+  // local mode: restore saved CC credentials; if no snapshot, clear custom API overrides
+  // so Claude Code falls back to its normal auth (OAuth / env vars) instead of
+  // lingering DS credentials from a prior custom-mode session.
+  if (merged.mode === 'local') {
+    applyCustomTemplateToSettings(merged.localSnapshot || {});
   }
 
   // Remap ALL Claude sessions' model to current runtime MODEL_MAP values.
@@ -2528,8 +2568,8 @@ function handleRestoreClaudeLocalSnapshot(ws) {
   config.activeTemplate = '';
   saveModelConfig(config);
   // Reset MODEL_MAP to local defaults
-  MODEL_MAP.opus = 'claude-opus-4-6';
-  MODEL_MAP.sonnet = 'claude-sonnet-4-6';
+  MODEL_MAP.opus = 'claude-opus-4-7[1m]';
+  MODEL_MAP.sonnet = 'claude-sonnet-4-6[1m]';
   MODEL_MAP.haiku = 'claude-haiku-4-5-20251001';
   applyModelConfig();
   wsSend(ws, { type: 'model_config', config: getModelConfigMasked() });

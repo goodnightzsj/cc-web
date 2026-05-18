@@ -5749,100 +5749,119 @@
 
     function renderClaudeConfigArea() {
       const isLocal = modelActiveTemplate === '';
-      const tplOptions = modelEditingTemplates.map(t =>
-        `<option value="${escapeHtml(t.name)}">${escapeHtml(t.name)}</option>`
-      ).join('');
+      const hasSnapshot = modelCurrentConfig?.localSnapshot && Object.keys(modelCurrentConfig.localSnapshot).length > 0
+        && (modelCurrentConfig.localSnapshot.apiKey || modelCurrentConfig.localSnapshot.apiBase);
 
-      if (isLocal) {
-        const hasSnapshot = modelCurrentConfig?.localSnapshot && Object.keys(modelCurrentConfig.localSnapshot).length > 0
-          && (modelCurrentConfig.localSnapshot.apiKey || modelCurrentConfig.localSnapshot.apiBase);
-        claudeConfigArea.innerHTML = `
-          <div class="settings-field">
-            <label>激活模板</label>
-            <div style="display:flex;gap:6px;align-items:center">
-              <select class="settings-select" id="claude-tpl-select" style="flex:1">
-                <option value="__local__" selected>本地配置</option>
-                ${tplOptions}
-                <option value="__new__">+ 新建模板</option>
-              </select>
-              <button class="btn-test" id="claude-info-btn" style="padding:4px 10px">说明</button>
-              <button class="btn-test" id="claude-read-local-btn" style="padding:4px 10px">读取当前配置</button>
-              ${hasSnapshot ? '<button class="btn-test" id="claude-restore-btn" style="padding:4px 10px">恢复快照</button>' : ''}
+      // "激活" badge reflects PERSISTED config (modelCurrentConfig), not transient click selection
+      const savedLocal = modelCurrentConfig?.mode === 'local';
+      const localMeta = hasSnapshot
+        ? `快照: ${escapeHtml(modelCurrentConfig.localSnapshot.apiBase || '无 Base URL')}`
+        : '使用本机 ~/.claude/settings.json 凭据';
+
+      // Custom template cards
+      const tplCards = modelEditingTemplates.map(t => {
+        const isSelected = t.name === modelActiveTemplate;
+        const isSaved = modelCurrentConfig?.mode === 'custom' && t.name === modelCurrentConfig?.activeTemplate;
+        const baseShort = (t.apiBase || '未设置').replace(/^https?:\/\//, '').replace(/\/+$/, '');
+        const keyStatus = t.apiKey ? '已设置' : '未设置 Key';
+        return `
+          <div class="tpl-card${isSelected ? ' active' : ''}" data-tpl-name="${escapeHtml(t.name)}">
+            <div class="tpl-card-radio"></div>
+            <div class="tpl-card-body">
+              <div class="tpl-card-name">${escapeHtml(t.name)}</div>
+              <div class="tpl-card-meta">${escapeHtml(baseShort)} · ${keyStatus}</div>
             </div>
+            <span class="tpl-card-badge" style="display:${isSaved ? 'inline-block' : 'none'}">激活</span>
+            <div class="tpl-card-actions" style="display:${isSelected ? 'flex' : 'none'}"><button class="btn-test" id="model-tpl-edit" style="padding:4px 8px">编辑</button><button class="btn-test" id="model-tpl-del" title="删除" style="padding:4px 8px">删除</button></div>
+          </div>`;
+      }).join('');
+
+      claudeConfigArea.innerHTML = `
+        <div class="settings-field">
+          <label>激活模板</label>
+        </div>
+        <div class="tpl-card-group" id="claude-tpl-group">
+          <div class="tpl-card${isLocal ? ' active' : ''}" data-tpl-name="__local__">
+            <div class="tpl-card-radio"></div>
+            <div class="tpl-card-body">
+              <div class="tpl-card-name">本地配置</div>
+              <div class="tpl-card-meta">${localMeta}</div>
+            </div>
+            <span class="tpl-card-badge" style="display:${savedLocal ? 'inline-block' : 'none'}">激活</span>
           </div>
-          <div class="settings-inline-note">
-            Agent 直接使用本机 <code>~/.claude/settings.json</code> 中的 API 信息，不会覆盖或修改本机配置。
+          ${tplCards}
+          <div class="tpl-card tpl-card-add" id="claude-tpl-add-card">
+            <span style="font-size:18px;line-height:1">+</span>
+            <span style="color:var(--text-muted)">新建模板</span>
           </div>
-        `;
-        panel.querySelector('#claude-tpl-select').addEventListener('change', async (e) => {
-          if (e.target.value === '__new__') {
+        </div>
+        <div class="settings-actions" style="margin-top:0;flex-wrap:wrap;gap:6px">
+          <button class="btn-test" id="claude-read-local-btn" style="padding:4px 10px">读取当前配置</button>
+          ${hasSnapshot ? '<button class="btn-test" id="claude-restore-btn" style="padding:4px 10px">恢复快照</button>' : ''}
+          <button class="btn-test" id="claude-info-btn" style="padding:4px 10px">说明</button>
+        </div>
+        <div class="settings-inline-note">
+          ${isLocal
+            ? 'Agent 直接使用本机 <code>~/.claude/settings.json</code> 中的 API 信息。'
+            : `当前使用模板 <strong>${escapeHtml(modelActiveTemplate)}</strong> — API 凭据已写入 <code>~/.claude/settings.json</code>。`}
+        </div>
+      `;
+
+      // Card click handlers
+      const group = panel.querySelector('#claude-tpl-group');
+      if (group) {
+        group.addEventListener('click', async (e) => {
+          const card = e.target.closest('.tpl-card');
+          if (!card) return;
+          // Don't fire when clicking action buttons inside the card
+          if (e.target.closest('button')) return;
+
+          const name = card.dataset.tplName;
+          if (card === panel.querySelector('#claude-tpl-add-card')) {
             const newName = await appPrompt('输入新模板名称:');
-            if (!newName || !newName.trim()) { e.target.value = '__local__'; return; }
+            if (!newName || !newName.trim()) return;
             const n = newName.trim();
-            if (modelEditingTemplates.find(t => t.name === n)) { appAlert('模板名称已存在'); e.target.value = '__local__'; return; }
+            if (modelEditingTemplates.find(t => t.name === n)) { appAlert('模板名称已存在'); return; }
             modelEditingTemplates.push({ name: n, apiKey: '', apiBase: '', defaultModel: '', opusModel: '', sonnetModel: '', haikuModel: '' });
             modelActiveTemplate = n;
             renderClaudeConfigArea();
             openTplEditModal();
-          } else {
-            modelActiveTemplate = e.target.value;
-            renderClaudeConfigArea();
+            return;
           }
+          if (name === '__local__') {
+            modelActiveTemplate = '';
+          } else {
+            modelActiveTemplate = name;
+          }
+          renderClaudeConfigArea();
         });
-        panel.querySelector('#claude-info-btn').addEventListener('click', showClaudeLocalInfoModal);
-        panel.querySelector('#claude-read-local-btn').addEventListener('click', () => send({ type: 'read_claude_local_config' }));
-        const restoreBtn = panel.querySelector('#claude-restore-btn');
-        if (restoreBtn) restoreBtn.addEventListener('click', () => send({ type: 'restore_claude_local_snapshot' }));
-        return;
-      }
 
-      // Custom template selected
-      const tpl = modelEditingTemplates.find(t => t.name === modelActiveTemplate);
-      const summary = tpl ? `API Key: <code>${tpl.apiKey ? '已设置' : '未设置'}</code> · Base: <code>${escapeHtml(tpl.apiBase || '默认')}</code>` : '';
-      claudeConfigArea.innerHTML = `
-        <div class="settings-field">
-          <label>激活模板</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <select class="settings-select" id="claude-tpl-select" style="flex:1">
-              <option value="__local__">本地配置</option>
-              ${tplOptions}
-              <option value="__new__">+ 新建模板</option>
-            </select>
-            <button class="btn-test" id="model-tpl-edit" style="padding:4px 10px">编辑</button>
-            <button class="btn-test" id="model-tpl-del" title="删除" style="padding:4px 8px">删除</button>
-          </div>
-        </div>
-        <div class="settings-inline-note">${summary}</div>
-      `;
+        // Edit button
+        const editBtn = panel.querySelector('#model-tpl-edit');
+        if (editBtn) editBtn.addEventListener('click', (e) => { e.stopPropagation(); openTplEditModal(); });
 
-      panel.querySelector('#claude-tpl-select').addEventListener('change', async (e) => {
-        if (e.target.value === '__new__') {
-          const newName = await appPrompt('输入新模板名称:');
-          if (!newName || !newName.trim()) { e.target.value = escapeHtml(modelActiveTemplate); return; }
-          const n = newName.trim();
-          if (modelEditingTemplates.find(t => t.name === n)) { appAlert('模板名称已存在'); e.target.value = escapeHtml(modelActiveTemplate); return; }
-          modelEditingTemplates.push({ name: n, apiKey: '', apiBase: '', defaultModel: '', opusModel: '', sonnetModel: '', haikuModel: '' });
-          modelActiveTemplate = n;
-          renderClaudeConfigArea();
-          openTplEditModal();
-        } else if (e.target.value === '__local__') {
-          modelActiveTemplate = '';
-          renderClaudeConfigArea();
-        } else {
-          modelActiveTemplate = e.target.value;
-          renderClaudeConfigArea();
-        }
-      });
-      panel.querySelector('#model-tpl-edit').addEventListener('click', () => openTplEditModal());
-      const delBtn = panel.querySelector('#model-tpl-del');
-      if (delBtn) {
-        delBtn.addEventListener('click', async () => {
+        // Delete button
+        const delBtn = panel.querySelector('#model-tpl-del');
+        if (delBtn) delBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
           if (!modelActiveTemplate) return;
           if (!(await appConfirm(`确认删除模板「${modelActiveTemplate}」?`))) return;
           modelEditingTemplates = modelEditingTemplates.filter(t => t.name !== modelActiveTemplate);
           modelActiveTemplate = modelEditingTemplates[0]?.name || '';
           renderClaudeConfigArea();
         });
+
+        // Read local config
+        const readBtn = panel.querySelector('#claude-read-local-btn');
+        if (readBtn) readBtn.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'read_claude_local_config' }); });
+
+        // Restore snapshot
+        const restoreBtn = panel.querySelector('#claude-restore-btn');
+        if (restoreBtn) restoreBtn.addEventListener('click', (e) => { e.stopPropagation(); send({ type: 'restore_claude_local_snapshot' }); });
+
+        // Info button
+        const infoBtn = panel.querySelector('#claude-info-btn');
+        if (infoBtn) infoBtn.addEventListener('click', (e) => { e.stopPropagation(); showClaudeLocalInfoModal(); });
       }
     }
 
@@ -6044,11 +6063,15 @@
           <h3>当前 Claude 本地配置</h3>
           <button class="settings-close" id="read-local-close">&times;</button>
         </div>
-        ${msg.sourceFound ? '' : '<div class="settings-inline-note" style="color:var(--text-warning, #e8a838)">未找到 ~/.claude/settings.json，以下为空值。</div>'}
+        ${!msg.sourceFound
+          ? '<div class="settings-inline-note" style="color:var(--text-warning, #e8a838)">未找到 ~/.claude/settings.json，以下为空值。</div>'
+          : !hasData
+            ? '<div class="settings-inline-note">当前无 API 覆写，Claude Code 使用 OAuth 登录认证或环境变量凭据。</div>'
+            : ''}
         ${fields.map(([label, val]) => `
           <div class="settings-field">
             <label>${label}</label>
-            <div style="font-size:0.9em;word-break:break-all;color:var(--text-secondary)">${escapeHtml(val)}</div>
+            <div style="font-size:0.9em;word-break:break-all;color:${val === '(空)' ? 'var(--text-muted)' : 'var(--text-secondary)'}">${escapeHtml(val)}</div>
           </div>
         `).join('')}
         ${hasData ? '<div class="settings-actions"><button class="btn-save" id="save-snapshot-btn">保存为快照</button></div>' : ''}
