@@ -90,6 +90,37 @@
   let currentTheme = (document.documentElement.dataset.theme || localStorage.getItem('cc-web-theme') || 'washi');
   let codexConfigCache = null;
   let loadedHistorySessionId = null;
+  let pendingHashSessionId = null; // session id from URL hash to load after auth
+  let hashChangeIgnore = false;    // suppress hashchange when we're the one setting it
+
+  function parseHashRoute() {
+    const h = location.hash;
+    const m = h.match(/^#\/session\/([a-zA-Z0-9_-]+)$/);
+    return m ? m[1] : null;
+  }
+
+  function updateHashForSession(sessionId) {
+    if (!sessionId) { history.replaceState(null, '', ' '); return; }
+    const wanted = '#/session/' + sessionId;
+    if (location.hash === wanted) return;
+    hashChangeIgnore = true;
+    history.pushState(null, '', wanted);
+    setTimeout(() => { hashChangeIgnore = false; }, 100);
+  }
+
+  function routeFromHash() {
+    const sid = parseHashRoute();
+    if (!sid) return false;
+    const meta = getSessionMeta(sid);
+    if (!meta) return false; // session not in list yet
+    if (sid !== currentSessionId) openSession(sid);
+    return true;
+  }
+
+  window.addEventListener('hashchange', () => {
+    if (hashChangeIgnore) return;
+    routeFromHash();
+  });
   let activeSessionLoad = null;
   let sidebarSwipe = null;
   let pendingAttachments = [];
@@ -1689,6 +1720,9 @@
     }
     if (!options.force && sessionId === currentSessionId && !activeSessionLoad) return;
 
+    // Update URL hash for direct session routing (skip during automated loads)
+    if (!options.noHash) updateHashForSession(sessionId);
+
     const disposition = getSessionCacheDisposition(sessionId);
     if (disposition === 'strong') {
       showCachedSession(sessionId);
@@ -2200,16 +2234,20 @@
         if (pendingInitialSessionLoad) {
           pendingInitialSessionLoad = false;
           // Smart agent recovery: if user's last-selected agent is empty but other
-          // agent has sessions, auto-switch on boot. Without this, a refresh into
-          // an empty tab can read as "session history disappeared" until the user
-          // manually switches tabs (which is what triggered the second-refresh
-          // recovery: setCurrentAgent on tab toggle re-renders).
+          // agent has sessions, auto-switch on boot.
           let targetAgent = currentAgent;
           const visibleForTarget = sessions.filter((s) => normalizeAgent(s.agent) === targetAgent);
           if (visibleForTarget.length === 0 && sessions.length > 0) {
             targetAgent = normalizeAgent(sessions[0].agent);
           }
-          syncViewForAgent(targetAgent, { preserveCurrent: false, loadLast: true });
+          // Default: don't auto-enter any conversation. Only load if URL hash
+          // routes to a specific session.
+          syncViewForAgent(targetAgent, { preserveCurrent: false, loadLast: false });
+          // After session list is ready, check URL hash for direct routing
+          if (!routeFromHash()) {
+            // No hash route — show welcome screen, clear any stale state
+            resetChatView(targetAgent);
+          }
         } else if (currentSessionId && !getSessionMeta(currentSessionId)) {
           resetChatView(currentAgent);
         }
